@@ -165,7 +165,6 @@ class SettingsToggle(BaseModel):
 @app.on_event("startup")
 async def startup():
     init_storage()
-    # Seed admin
     if not await db.users.find_one({"email": ADMIN_EMAIL}):
         await db.users.insert_one({
             "id": str(uuid.uuid4()),
@@ -181,9 +180,8 @@ async def startup():
             "active_slots": [], "spending_points": 0, "crawled_url": "",
             "created_at": now_iso(),
         })
-    # Seed demo client
-    if not await db.users.find_one({"email": "demo@client.com"}):
-        await db.users.insert_one({
+    # Seed demo client (reset password every startup so docs stay valid)
+    demo_doc = {
             "id": str(uuid.uuid4()),
             "email": "demo@client.com",
             "password": hash_pw("Demo@12345"),
@@ -196,7 +194,12 @@ async def startup():
             "widget_bg": "#1A202C", "bubble_color": "#48BB78", "accent_color": "#48BB78",
             "active_slots": [], "spending_points": 420, "crawled_url": "https://demo-shop.example.com/products",
             "created_at": now_iso(),
-        })
+    }
+    existing = await db.users.find_one({"email": "demo@client.com"})
+    if not existing:
+        await db.users.insert_one(demo_doc)
+    else:
+        await db.users.update_one({"email": "demo@client.com"}, {"$set": {"password": hash_pw("Demo@12345"), "active": True}})
     if not await db.settings.find_one({"id": "app_settings"}):
         await db.settings.insert_one({"id": "app_settings", "public_signup_enabled": True})
     logger.info("Startup complete")
@@ -304,8 +307,8 @@ async def upload_pdf(file: UploadFile = File(...), user=Depends(get_current_user
         "is_deleted": False,
         "created_at": now_iso(),
     }
-    await db.files.insert_one(rec)
-    return {k: v for k, v in rec.items() if k != "_id"}
+    await db.files.insert_one(rec.copy())
+    return rec
 
 @api_router.get("/knowledge/files")
 async def list_files(user=Depends(get_current_user)):
@@ -388,7 +391,7 @@ async def booking_confirm(req: BookingReq):
     if not tenant:
         raise HTTPException(404, "Tenant not found")
     booking = {"id": str(uuid.uuid4()), "tenant_id": req.tenant_id, "slot": req.slot, "customer_email": req.customer_email, "created_at": now_iso()}
-    await db.bookings.insert_one(booking)
+    await db.bookings.insert_one(booking.copy())
     html = f"""
     <div style='font-family:Arial;padding:24px;background:#1A202C;color:#fff'>
     <h2 style='color:#48BB78'>Appointment Confirmed</h2>
