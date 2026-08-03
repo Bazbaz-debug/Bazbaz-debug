@@ -551,6 +551,83 @@ async def admin_user_files(user_id: str, admin=Depends(require_admin)):
     files = await db.files.find({"user_id": user_id, "is_deleted": False}, {"_id": 0}).to_list(200)
     return files
 
+# ============= ADMIN ANALYTICS =============
+@api_router.get("/admin/stats")
+async def admin_stats(admin=Depends(require_admin)):
+    total_clients = await db.users.count_documents({"role": "client"})
+    active_clients = await db.users.count_documents({"role": "client", "active": True})
+    total_bookings = await db.bookings.count_documents({})
+    week_ago = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
+    bookings_week = await db.bookings.count_documents({"created_at": {"$gte": week_ago}})
+    total_calls = await db.calls.count_documents({})
+    live_calls = await db.calls.count_documents({"status": "live_call_placed"})
+    total_files = await db.files.count_documents({"is_deleted": False})
+    # Aggregate metrics
+    agg = await db.metrics.aggregate([
+        {"$group": {"_id": None,
+            "chats": {"$sum": "$chats"},
+            "escalations": {"$sum": "$escalations"},
+            "voice_seconds": {"$sum": "$voice_seconds"},
+            "videos": {"$sum": "$videos_generated"}}}
+    ]).to_list(1)
+    m = agg[0] if agg else {}
+    return {
+        "total_clients": total_clients,
+        "active_clients": active_clients,
+        "total_bookings": total_bookings,
+        "bookings_week": bookings_week,
+        "total_chats": m.get("chats", 0),
+        "total_escalations": m.get("escalations", 0),
+        "voice_minutes": round(m.get("voice_seconds", 0) / 60, 1),
+        "videos_generated": m.get("videos", 0),
+        "total_calls": total_calls,
+        "live_calls": live_calls,
+        "total_files": total_files,
+    }
+
+@api_router.get("/admin/activity")
+async def admin_activity(admin=Depends(require_admin)):
+    bookings = await db.bookings.find({}, {"_id": 0}).sort("created_at", -1).limit(10).to_list(10)
+    calls = await db.calls.find({}, {"_id": 0}).sort("created_at", -1).limit(10).to_list(10)
+    # Enrich with tenant emails
+    all_uids = list({b["tenant_id"] for b in bookings} | {c.get("tenant_id") for c in calls if c.get("tenant_id")})
+    users = await db.users.find({"id": {"$in": all_uids}}, {"_id": 0, "id": 1, "email": 1, "full_name": 1}).to_list(200)
+    umap = {u["id"]: u for u in users}
+    for b in bookings:
+        u = umap.get(b["tenant_id"], {})
+        b["tenant_email"] = u.get("email", "unknown")
+    for c in calls:
+        u = umap.get(c.get("tenant_id"), {})
+        c["tenant_email"] = u.get("email", "unknown")
+    return {"bookings": bookings, "calls": calls}
+
+@api_router.get("/admin/health")
+async def admin_health(admin=Depends(require_admin)):
+    return {
+        "emergent_llm": bool(EMERGENT_LLM_KEY),
+        "resend": bool(RESEND_API_KEY),
+        "twilio_configured": bool(TWILIO_SID and TWILIO_TOKEN),
+        "twilio_can_call": bool(TWILIO_SID and TWILIO_TOKEN and TWILIO_FROM),
+        "twilio_from": TWILIO_FROM or None,
+        "escalation_target": ESCALATION_TARGET or None,
+        "fal_configured": bool(FAL_KEY),
+        "object_storage": bool(storage_key),
+    }
+
+@api_router.get("/admin/users/{user_id}/metrics")
+async def admin_user_metrics(user_id: str, admin=Depends(require_admin)):
+    m = await db.metrics.find_one({"tenant_id": user_id}, {"_id": 0}) or {}
+    bookings = await db.bookings.count_documents({"tenant_id": user_id})
+    escalations_calls = await db.calls.count_documents({"tenant_id": user_id})
+    return {
+        "chats": m.get("chats", 0),
+        "escalations": m.get("escalations", 0),
+        "voice_seconds": m.get("voice_seconds", 0),
+        "videos": m.get("videos_generated", 0),
+        "bookings": bookings,
+        "calls": escalations_calls,
+    }
+
 # ============= AVATAR / LIPSYNC (fal.ai veed/lipsync) =============
 # In-memory temp store for audio to serve to fal.ai
 _temp_audio = {}

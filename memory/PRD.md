@@ -23,6 +23,16 @@ Phase 1:
 - Sandbox widget with GPT 5.6 Terra streaming (multi-language), Talk-to-Live-Human + Book slot
 - Admin panel with signup toggle, manual account creator, client table, per-row actions
 
+Phase 5 (2026-02-03) — Admin Overhaul:
+- **6-stat global row**: Clients, Chats, Bookings(7d), Voice Min, Videos, Calls (auto-refresh 10s)
+- **4 admin tabs**: Overview / Clients / Activity / System
+- **Overview tab**: 6-card Integration Health panel (Emergent LLM, Resend, Twilio Voice, Fal Lip-Sync, Object Storage, Escalation Target — each shows connected/needs-attention), Public Signup Toggle, Manual Account Creator
+- **Clients tab**: extended table with Avatar gender column, color swatches, industry, domain, per-row Metrics/Files/Instruction-Edit/Send-Reset/Deactivate action buttons
+- **Activity tab**: real-time Recent Bookings and Escalation Calls feeds with tenant + customer emails, Twilio SID, timestamps
+- **System tab**: Env credential status reference + aggregate storage stat
+- **Per-client Metrics modal**: chats, bookings, escalations, voice seconds, videos, calls
+- Backend adds `/api/admin/stats`, `/api/admin/activity`, `/api/admin/health`, `/api/admin/users/{id}/metrics`
+
 Phase 4 (2026-02-03):
 - **Fal.ai talking-head avatar (veed/lipsync)**: FAL_KEY wired, endpoint `POST /api/avatar/lipsync` generates TTS → uploads audio → submits to `veed/lipsync` → returns lip-synced video URL. Widget swaps `<img>` to `<video>` when ready with a "Generating lip-synced video..." overlay
 - **Voice matching**: per-tenant `avatar_gender` (male/female/neutral). Voices are matched automatically: male→onyx, female→nova, neutral→sage. Widget's still image + generated video both use the matched persona
