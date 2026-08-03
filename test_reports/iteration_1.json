@@ -1,0 +1,54 @@
+{
+  "summary": "Latency-sensitive first-finish testing of Rozio-Killer SaaS. Backend health + auth + core APIs + streaming chat + admin all working. Two backend endpoints (chat/escalate, booking/confirm) return 500 due to Mongo ObjectId serialization. Frontend landing/login/dashboard/admin all render with all data-testids intact. Split-screen sandbox widget streams multi-language (Spanish) replies from GPT 5.6 Terra correctly.",
+  "tested_scope": ["backend", "frontend", "auth", "integration"],
+  "passed": [
+    "GET /api/ -> 200",
+    "POST /api/auth/login admin -> 200 JWT + role=admin",
+    "POST /api/auth/login wrong password -> 401",
+    "POST /api/auth/forgot -> {ok:true} and rotates password",
+    "POST /api/auth/register -> {ok:true, email_preview_password:...}",
+    "GET /api/me without token -> 401; with token -> profile JSON",
+    "POST /api/knowledge/crawl -> 3 mocked products + delivery zones",
+    "PUT /api/admin/settings public_signup_enabled -> {ok:true}",
+    "POST /api/admin/users/create -> generates temp password",
+    "POST /api/chat/stream -> SSE stream, multi-language (Spanish reply verified curl + UI)",
+    "Landing page loads with hero, CTAs, nav-login and nav-signup buttons",
+    "Admin login redirects directly to /admin panel (Toggle + Manual Creator + Client Database with 2 clients + Files/Instruction/Forgot/Deactivate actions all rendered)",
+    "Client dashboard: 3 tabs (knowledge/branding/matrix) all present; industry-select, instruction-textarea, crawl-url-input, crawl-btn, pdf-upload-input, sandbox-widget all found",
+    "Branding tab: color-widget-bg, color-bubble, color-accent all present",
+    "Matrix tab: calendar-grid and spending-add-btn present",
+    "Sandbox widget launches, Spanish prompt returned in fluent Spanish (streaming)"
+  ],
+  "failed": [
+    {
+      "area": "backend / booking",
+      "issue": "POST /api/booking/confirm returns 500. Backend log: ValueError: [TypeError(\"'ObjectId' object is not iterable\")]. The endpoint likely returns the raw Mongo doc containing _id (ObjectId) which FastAPI cannot JSON-serialize.",
+      "evidence": "curl -X POST /api/booking/confirm with valid body {tenant_id, slot, customer_email} -> 'Internal Server Error'. Trace in /var/log/supervisor/backend.err.log points at jsonable_encoder ObjectId error.",
+      "priority": "HIGH"
+    },
+    {
+      "area": "backend / escalate",
+      "issue": "POST /api/chat/escalate returns 500 with the same ObjectId serialization error. Endpoint must strip _id (or return a pydantic response model / dict without _id).",
+      "evidence": "curl -X POST /api/chat/escalate {tenant_id, transcript:[...]} -> 'Internal Server Error'. Backend log shows the same jsonable_encoder ObjectId failure.",
+      "priority": "HIGH"
+    },
+    {
+      "area": "seed / demo credentials",
+      "issue": "Documented demo credentials demo@client.com / Demo@12345 stopped working after the /api/auth/forgot smoke test rotated the password. Password rotation is expected per implementation, but the demo seed does not lock it or reset on next boot, so the credentials in /app/memory/test_credentials.md can become stale after any forgot-password call on demo@client.com.",
+      "evidence": "Login attempt for demo@client.com after /auth/forgot -> 401. Fresh admin-created user logs in successfully.",
+      "priority": "LOW"
+    }
+  ],
+  "action_items": [
+    "Fix /api/booking/confirm and /api/chat/escalate: strip _id from Mongo doc before returning (or return a plain dict / Pydantic model). Currently 500s.",
+    "Optional: re-seed demo@client.com password to Demo@12345 on each startup so docs stay valid across smoke tests.",
+    "Note: GET /api/admin/settings is not implemented (405) but PUT works; public read is via /api/settings/public which is fine."
+  ],
+  "success_rate": {"backend": "82%", "frontend": "100%"},
+  "retest_needed": true,
+  "full_testing_deferred": true,
+  "mocked_apis_confirmed": [
+    "/api/knowledge/crawl returns static 3 products + US/EU/APAC delivery (as declared MOCKED)",
+    "Registration email is queued via Resend, temp password returned inline (as declared MOCKED for demo)"
+  ]
+}
