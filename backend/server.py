@@ -556,10 +556,28 @@ async def booking_confirm(req: BookingReq):
     tenant = await db.users.find_one({"id": req.tenant_id}, {"_id": 0})
     if not tenant:
         raise HTTPException(404, "Tenant not found")
-    # Build a Google Calendar "add event" URL. Try to parse the slot string; if not, default to +1 day 10:00-10:30
+    # Build a Google Calendar "add event" URL. Try to parse simple time cues (today, tomorrow, HH:MM am/pm) from the slot text; otherwise default to +1 day 15:00 UTC.
     from datetime import datetime as _dt
+    import re as _re
+    slot_lower = (req.slot or "").lower()
     start_utc = _dt.now(timezone.utc) + timedelta(days=1)
-    start_utc = start_utc.replace(hour=15, minute=0, second=0, microsecond=0)
+    if "today" in slot_lower:
+        start_utc = _dt.now(timezone.utc)
+    elif "next week" in slot_lower:
+        start_utc = _dt.now(timezone.utc) + timedelta(days=7)
+    # Look for HH(:MM)? (am|pm)?
+    hm = _re.search(r"(\b\d{1,2})(?::(\d{2}))?\s*(am|pm)?", slot_lower)
+    hour, minute = 15, 0
+    if hm:
+        try:
+            hour = int(hm.group(1)); minute = int(hm.group(2) or 0)
+            ampm = hm.group(3)
+            if ampm == "pm" and hour < 12: hour += 12
+            if ampm == "am" and hour == 12: hour = 0
+            if hour > 23: hour = 15
+        except Exception:
+            hour, minute = 15, 0
+    start_utc = start_utc.replace(hour=hour, minute=minute, second=0, microsecond=0)
     end_utc = start_utc + timedelta(minutes=30)
     fmt = "%Y%m%dT%H%M%SZ"
     dates = f"{start_utc.strftime(fmt)}/{end_utc.strftime(fmt)}"

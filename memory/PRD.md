@@ -23,6 +23,15 @@ Phase 1:
 - Sandbox widget with GPT 5.6 Terra streaming (multi-language), Talk-to-Live-Human + Book slot
 - Admin panel with signup toggle, manual account creator, client table, per-row actions
 
+Phase 6 (2026-02-03) — Bug fixes from user feedback:
+- **Removed** the "Talk to Live Human" and "Book slot" buttons from the widget UI
+- **Natural language triggers**: LLM system prompt now emits `[[ACTION:escalate]]` and `[[ACTION:book:<slot>]]` markers when user requests those in chat or voice. Frontend strips markers and auto-calls the correct endpoint
+- **Google Calendar link**: `/api/booking/confirm` now returns `google_calendar_url` (Google Calendar TEMPLATE link) and parses simple time cues from the slot text ("tomorrow 3pm", "today 10:30 am"). Widget auto-opens the link in a new tab; confirmation email also includes "Add to Google Calendar" button
+- **Real website crawl**: `/api/knowledge/crawl` now fetches the URL, parses HTML with BeautifulSoup, and asks GPT 5.6 Terra to extract 3-6 real products/services with prices, descriptions, images. Verified on vercel.com, stripe.com — no more Aurora Runner mock data
+- **AI-generated avatar faces**: on startup, fal.ai flux/schnell generates 3 photorealistic AI portraits for male/female/neutral (falls back to dicebear personas SVG when fal wallet is empty). Served via `/api/public/avatar/{gender}.jpg`
+- **Voice Call mode**: green phone icon in the widget starts hands-free continuous voice mode using browser SpeechRecognition — user speaks in any language, AI replies, mic re-arms automatically. Red phone button ends the call
+- Testing agent iteration 3: 11/11 backend + all frontend tests pass
+
 Phase 5 (2026-02-03) — Admin Overhaul:
 - **6-stat global row**: Clients, Chats, Bookings(7d), Voice Min, Videos, Calls (auto-refresh 10s)
 - **4 admin tabs**: Overview / Clients / Activity / System
