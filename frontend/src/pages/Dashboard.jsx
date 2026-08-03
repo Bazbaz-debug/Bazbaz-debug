@@ -1,10 +1,12 @@
 import { useEffect, useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
-import { Upload, LogOut, Sparkles, CalendarDays, Palette, Book, TrendingUp, Bot, Link2, FileText, Shield, Copy, Check } from "lucide-react";
+import { Upload, LogOut, Sparkles, CalendarDays, Palette, Book, TrendingUp, Bot, Link2, FileText, Shield, Copy, Check, Maximize2 } from "lucide-react";
 import api, { API } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import Widget from "@/components/Widget";
+import MetricsBar from "@/components/MetricsBar";
+import MouseGradient from "@/components/MouseGradient";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -12,6 +14,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Calendar } from "@/components/ui/calendar";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 
 const INDUSTRIES = ["E-Commerce", "Local Service", "General Website"];
 
@@ -28,6 +31,7 @@ export default function Dashboard() {
   const [crawlUrl, setCrawlUrl] = useState("");
   const [busy, setBusy] = useState(false);
   const [selectedDates, setSelectedDates] = useState([]);
+  const [previewOpen, setPreviewOpen] = useState(false);
 
   const loadFiles = useCallback(() => {
     api.get("/knowledge/files").then(r => setFiles(r.data)).catch(() => {});
@@ -108,7 +112,16 @@ export default function Dashboard() {
         </div>
 
         <p className="uppercase text-xs tracking-[0.3em] font-bold text-[#48BB78] mb-2">Client Configuration</p>
-        <h1 className="font-display font-black text-4xl tracking-tight mb-8">Widget console.</h1>
+        <h1 className="font-display font-black text-4xl tracking-tight mb-6">Widget console.</h1>
+
+        <MetricsBar />
+
+        <div className="mb-6">
+          <Button data-testid="open-preview-btn" onClick={() => setPreviewOpen(true)} className="bg-[#48BB78] hover:bg-[#38A169] text-[#1A202C] hover:text-white font-bold rounded-md neon-glow-hover">
+            <Maximize2 size={14} className="mr-2"/> Open Live Preview
+          </Button>
+          <span className="ml-3 text-xs text-[#A0AEC0]">Test chatbot, avatar, knowledge base & booking in a full-screen sandbox before publishing.</span>
+        </div>
 
         <Tabs defaultValue="knowledge" className="w-full">
           <TabsList className="bg-[#2D3748] border border-white/5 rounded-md p-1 h-11 mb-6 w-full grid grid-cols-3">
@@ -208,7 +221,8 @@ export default function Dashboard() {
 
       {/* RIGHT PANE - SANDBOX */}
       <div className="hidden lg:flex flex-1 h-screen sticky top-0 bg-[#0D1117] items-center justify-center relative dot-grid noise overflow-hidden">
-        <div className="absolute top-6 left-6 flex items-center gap-2">
+        <MouseGradient color="#48BB78" intensity={0.12} />
+        <div className="absolute top-6 left-6 flex items-center gap-2 z-10">
           <span className="w-2 h-2 rounded-full pulse-dot" style={{ background: colors.accent_color }}></span>
           <span className="uppercase text-xs tracking-[0.3em] font-bold text-[#48BB78]">Interactive Sandbox</span>
         </div>
@@ -226,6 +240,33 @@ export default function Dashboard() {
         </div>
         <Widget tenant={user} colors={colors} catalog={user.catalog || []}/>
       </div>
+
+      {/* Live Preview Modal (full-screen sandbox) */}
+      <Dialog open={previewOpen} onOpenChange={setPreviewOpen}>
+        <DialogContent className="bg-[#0D1117] border-white/10 text-white max-w-6xl w-[95vw] h-[90vh] p-0 overflow-hidden">
+          <DialogHeader className="px-6 py-4 border-b border-white/10">
+            <DialogTitle className="font-display text-xl">Live Preview &mdash; publish-ready sandbox</DialogTitle>
+          </DialogHeader>
+          <div className="relative flex-1 h-full dot-grid noise" data-testid="preview-modal-canvas">
+            <MouseGradient color={colors.accent_color} intensity={0.18} />
+            <div className="absolute inset-0 flex items-center justify-center p-8">
+              <div className="w-full max-w-2xl bg-[#1A202C] border border-white/10 rounded-lg p-8 opacity-90 relative z-10">
+                <div className="h-2 w-24 rounded bg-white/10 mb-4"></div>
+                <div className="h-10 w-3/4 rounded bg-white/10 mb-6"></div>
+                <div className="h-4 w-full rounded bg-white/5 mb-2"></div>
+                <div className="h-4 w-5/6 rounded bg-white/5 mb-2"></div>
+                <div className="h-4 w-4/6 rounded bg-white/5 mb-6"></div>
+                <div className="grid grid-cols-3 gap-3">
+                  <div className="h-32 rounded bg-white/5"></div>
+                  <div className="h-32 rounded bg-white/5"></div>
+                  <div className="h-32 rounded bg-white/5"></div>
+                </div>
+              </div>
+            </div>
+            {previewOpen && <Widget tenant={user} colors={colors} catalog={user.catalog || []}/>}
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

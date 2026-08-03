@@ -3,6 +3,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { Bot, Zap, Globe, Shield, ArrowRight, Sparkles, MessagesSquare } from "lucide-react";
 import api from "@/lib/api";
 import { Button } from "@/components/ui/button";
+import MouseGradient from "@/components/MouseGradient";
 
 export default function Landing() {
   const [signupOpen, setSignupOpen] = useState(true);
@@ -30,8 +31,9 @@ export default function Landing() {
       </nav>
 
       {/* HERO */}
-      <section className="relative px-6 md:px-16 pt-20 pb-32 dot-grid noise">
-        <div className="max-w-6xl">
+      <section className="relative px-6 md:px-16 pt-20 pb-32 dot-grid noise overflow-hidden">
+        <MouseGradient color="#48BB78" intensity={0.10} />
+        <div className="max-w-6xl relative z-10">
           <div className="inline-flex items-center gap-2 border border-[#48BB78]/40 rounded-full px-3 py-1 mb-8 text-xs tracking-[0.2em] uppercase font-bold text-[#48BB78]">
             <Sparkles size={12}/> Cross-Platform AI Widgets
           </div>

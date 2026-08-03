@@ -383,6 +383,10 @@ async def chat_stream(req: ChatReq):
 
     chat = LlmChat(api_key=EMERGENT_LLM_KEY, session_id=req.session_id, system_message=system).with_model("openai", "gpt-5.6-terra")
 
+    # increment chats counter
+    if tenant_id:
+        await db.metrics.update_one({"tenant_id": tenant_id}, {"$inc": {"chats": 1}}, upsert=True)
+
     async def gen():
         try:
             async for ev in chat.stream_message(UserMessage(text=req.message)):
@@ -430,6 +434,7 @@ async def escalate(req: EscalateReq):
             logger.error(f"Twilio call failed: {e}")
             call_status = f"failed: {str(e)[:80]}"
     await db.calls.insert_one({"id": str(uuid.uuid4()), "tenant_id": req.tenant_id, "target": ESCALATION_TARGET, "status": call_status, "sid": call_sid, "created_at": now_iso()})
+    await db.metrics.update_one({"tenant_id": req.tenant_id}, {"$inc": {"escalations": 1}}, upsert=True)
     return {"ok": True, "status": "Routing to Live Line...", "phone": ESCALATION_TARGET or "+1-555-ROZIO-AI", "call_status": call_status, "call_sid": call_sid}
 
 @api_router.post("/booking/confirm")
@@ -519,6 +524,29 @@ async def admin_user_files(user_id: str, admin=Depends(require_admin)):
     files = await db.files.find({"user_id": user_id, "is_deleted": False}, {"_id": 0}).to_list(200)
     return files
 
+# ============= METRICS =============
+@api_router.get("/me/metrics")
+async def me_metrics(user=Depends(get_current_user)):
+    tid = user["id"]
+    m = await db.metrics.find_one({"tenant_id": tid}, {"_id": 0}) or {}
+    week_ago = datetime.now(timezone.utc) - timedelta(days=7)
+    today = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+    bookings_week = await db.bookings.count_documents({"tenant_id": tid, "created_at": {"$gte": week_ago.isoformat()}})
+    # rough "chats today" - since we don't timestamp per-chat, just show total chats
+    chats_total = m.get("chats", 0)
+    escalations = m.get("escalations", 0)
+    voice_secs = m.get("voice_seconds", 0)
+    voice_min = round(voice_secs / 60, 1)
+    conv_rate = 0.0
+    if chats_total > 0:
+        conv_rate = round(((bookings_week + escalations) / chats_total) * 100, 1)
+    return {
+        "chats_today": chats_total,
+        "bookings_week": bookings_week,
+        "voice_minutes": voice_min,
+        "conversion_rate": conv_rate,
+    }
+
 # ============= VOICE (Whisper STT + OpenAI TTS) =============
 @api_router.post("/voice/stt")
 async def voice_stt(file: UploadFile = File(...)):
@@ -542,12 +570,17 @@ async def voice_stt(file: UploadFile = File(...)):
 class TTSReq(BaseModel):
     text: str
     voice: str = "nova"
+    tenant_id: Optional[str] = None
 
 @api_router.post("/voice/tts")
 async def voice_tts(req: TTSReq):
     tts = OpenAITextToSpeech(api_key=EMERGENT_LLM_KEY)
     try:
         b64 = await tts.generate_speech_base64(text=req.text[:2000], voice=req.voice, model="tts-1", response_format="mp3")
+        if req.tenant_id:
+            # ~ 150 words/min TTS; approximate seconds from char count
+            secs = max(1, int(len(req.text) / 15))
+            await db.metrics.update_one({"tenant_id": req.tenant_id}, {"$inc": {"voice_seconds": secs}}, upsert=True)
         return {"audio_base64": b64, "mime": "audio/mpeg"}
     except Exception as e:
         logger.error(f"TTS failed: {e}")

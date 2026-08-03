@@ -35,7 +35,7 @@ export default function Widget({ tenant, colors, catalog }) {
     try {
       const r = await fetch(`${API}/voice/tts`, {
         method: "POST", headers: {"Content-Type":"application/json"},
-        body: JSON.stringify({ text: text.slice(0, 1200), voice: "nova" }),
+        body: JSON.stringify({ text: text.slice(0, 1200), voice: "nova", tenant_id: tenant?.id }),
       });
       const data = await r.json();
       if (data.audio_base64) {
