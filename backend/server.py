@@ -15,6 +15,8 @@ from emergentintegrations.llm.openai import OpenAISpeechToText, OpenAITextToSpee
 from pypdf import PdfReader
 from io import BytesIO
 from twilio.rest import Client as TwilioClient
+import fal_client
+import base64
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -36,6 +38,30 @@ TWILIO_TOKEN = os.environ.get("TWILIO_AUTH_TOKEN", "")
 TWILIO_FROM = os.environ.get("TWILIO_PHONE_NUMBER", "")
 ESCALATION_TARGET = os.environ.get("ESCALATION_TARGET_PHONE", "")
 FAL_KEY = os.environ.get("FAL_KEY", "")
+if FAL_KEY:
+    os.environ["FAL_KEY"] = FAL_KEY  # fal-client reads from env
+
+# Avatar profiles: gender → {image, base_video, voice}
+AVATAR_PROFILES = {
+    "male": {
+        "image": "https://images.pexels.com/photos/2379004/pexels-photo-2379004.jpeg?auto=compress&cs=tinysrgb&w=400",
+        "video": "https://videos.pexels.com/video-files/8419036/8419036-hd_1280_720_25fps.mp4",
+        "voice": "onyx",
+        "label": "Male",
+    },
+    "female": {
+        "image": "https://images.pexels.com/photos/774909/pexels-photo-774909.jpeg?auto=compress&cs=tinysrgb&w=400",
+        "video": "https://videos.pexels.com/video-files/6076988/6076988-uhd_2560_1440_25fps.mp4",
+        "voice": "nova",
+        "label": "Female",
+    },
+    "neutral": {
+        "image": "https://images.pexels.com/photos/13108284/pexels-photo-13108284.jpeg?auto=compress&cs=tinysrgb&w=400",
+        "video": "https://videos.pexels.com/video-files/7580811/7580811-uhd_3840_2160_25fps.mp4",
+        "voice": "sage",
+        "label": "Neutral",
+    },
+}
 
 resend.api_key = RESEND_API_KEY
 
@@ -142,6 +168,7 @@ class ProfileUpdate(BaseModel):
     active_slots: Optional[List[str]] = None
     spending_points: Optional[int] = None
     crawled_url: Optional[str] = None
+    avatar_gender: Optional[str] = None
 
 class ChatReq(BaseModel):
     session_id: str
@@ -523,6 +550,77 @@ async def admin_update_instruction(user_id: str, req: AdminUpdateInstructionReq,
 async def admin_user_files(user_id: str, admin=Depends(require_admin)):
     files = await db.files.find({"user_id": user_id, "is_deleted": False}, {"_id": 0}).to_list(200)
     return files
+
+# ============= AVATAR / LIPSYNC (fal.ai veed/lipsync) =============
+# In-memory temp store for audio to serve to fal.ai
+_temp_audio = {}
+
+@api_router.get("/public/audio/{aid}.mp3")
+async def public_audio(aid: str):
+    data = _temp_audio.get(aid)
+    if not data:
+        raise HTTPException(404, "Audio expired")
+    return Response(content=data, media_type="audio/mpeg")
+
+@api_router.get("/avatar/profiles")
+async def avatar_profiles():
+    # Return public info about each gender profile
+    return {k: {"image": v["image"], "voice": v["voice"], "label": v["label"]} for k, v in AVATAR_PROFILES.items()}
+
+class LipsyncReq(BaseModel):
+    tenant_id: str
+    text: str
+
+def _run_fal_lipsync(video_url: str, audio_url: str) -> str:
+    """Blocking fal-client call. Returns generated video URL."""
+    result = fal_client.subscribe(
+        "veed/lipsync",
+        arguments={"video_url": video_url, "audio_url": audio_url},
+        with_logs=False,
+    )
+    # veed/lipsync returns {'video': {'url': '...'}}
+    if isinstance(result, dict):
+        vid = result.get("video") or {}
+        return vid.get("url") if isinstance(vid, dict) else vid
+    return None
+
+@api_router.post("/avatar/lipsync")
+async def avatar_lipsync(req: LipsyncReq):
+    if not FAL_KEY:
+        raise HTTPException(400, "FAL_KEY not configured")
+    tenant = await db.users.find_one({"id": req.tenant_id}, {"_id": 0})
+    if not tenant:
+        raise HTTPException(404, "Tenant not found")
+    gender = tenant.get("avatar_gender", "female")
+    profile = AVATAR_PROFILES.get(gender, AVATAR_PROFILES["female"])
+    # 1) Generate TTS audio bytes
+    tts = OpenAITextToSpeech(api_key=EMERGENT_LLM_KEY)
+    try:
+        b64 = await tts.generate_speech_base64(text=req.text[:800], voice=profile["voice"], model="tts-1", response_format="mp3")
+    except Exception as e:
+        raise HTTPException(500, f"TTS failed: {e}")
+    audio_bytes = base64.b64decode(b64)
+    aid = str(uuid.uuid4())
+    _temp_audio[aid] = audio_bytes
+    # Clean up old audio (keep last 20)
+    if len(_temp_audio) > 20:
+        for old_key in list(_temp_audio.keys())[:-20]:
+            _temp_audio.pop(old_key, None)
+    frontend_url = os.environ.get("REACT_APP_BACKEND_URL") or "https://saas-ai-platform-5.preview.emergentagent.com"
+    audio_url = f"{frontend_url}/api/public/audio/{aid}.mp3"
+    # 2) Submit to fal
+    try:
+        video_url = await asyncio.to_thread(_run_fal_lipsync, profile["video"], audio_url)
+        if not video_url:
+            raise HTTPException(500, "fal.ai returned empty video URL")
+        # metrics
+        secs = max(1, int(len(req.text) / 15))
+        await db.metrics.update_one({"tenant_id": req.tenant_id}, {"$inc": {"voice_seconds": secs, "videos_generated": 1}}, upsert=True)
+        return {"ok": True, "video_url": video_url, "audio_b64": b64, "gender": gender, "voice": profile["voice"]}
+    except Exception as e:
+        logger.error(f"fal lipsync failed: {e}")
+        # graceful fallback: return audio only + image
+        return {"ok": False, "error": str(e)[:120], "video_url": None, "audio_b64": b64, "gender": gender, "voice": profile["voice"], "fallback_image": profile["image"]}
 
 # ============= METRICS =============
 @api_router.get("/me/metrics")

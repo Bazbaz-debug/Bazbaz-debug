@@ -23,6 +23,13 @@ Phase 1:
 - Sandbox widget with GPT 5.6 Terra streaming (multi-language), Talk-to-Live-Human + Book slot
 - Admin panel with signup toggle, manual account creator, client table, per-row actions
 
+Phase 4 (2026-02-03):
+- **Fal.ai talking-head avatar (veed/lipsync)**: FAL_KEY wired, endpoint `POST /api/avatar/lipsync` generates TTS → uploads audio → submits to `veed/lipsync` → returns lip-synced video URL. Widget swaps `<img>` to `<video>` when ready with a "Generating lip-synced video..." overlay
+- **Voice matching**: per-tenant `avatar_gender` (male/female/neutral). Voices are matched automatically: male→onyx, female→nova, neutral→sage. Widget's still image + generated video both use the matched persona
+- **Gender selector** in Branding tab shows 3 cards with headshot + voice label, live-syncs to sandbox widget
+- **Widget toggles**: `STILL` (audio-reactive image) vs `VIDEO` (fal lipsync) + `VOICE ON/OFF`
+- **Note**: fal.ai account currently has $0 balance so lip-sync gracefully falls back to still-image + TTS audio. Once balance is added, VIDEO toggle produces real lip-synced clips.
+
 Phase 3 (2026-02-03):
 - **Dynamic mouse-reactive background**: Radial gradient follows cursor + static organic mesh gradient blobs. Applied to landing hero + sandbox pane + preview modal.
 - **Live Preview Modal**: "Open Live Preview" button opens full-screen dialog with mock site + working widget (chat, avatar, voice, booking) for testing before publishing embed.

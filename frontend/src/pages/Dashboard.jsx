@@ -186,6 +186,7 @@ export default function Dashboard() {
           {/* TAB 2: BRANDING */}
           <TabsContent value="branding" className="space-y-6">
             <p className="text-[#A0AEC0] text-sm">Live preview updates in the sandbox on the right &rarr;</p>
+            <AvatarGenderPicker current={user.avatar_gender || "female"} onChange={v => updateField("avatar_gender", v)}/>
             <ColorPicker testId="color-widget-bg" label="Widget background" value={colors.widget_bg} onChange={v => updateField("widget_bg", v)}/>
             <ColorPicker testId="color-bubble" label="Bubble color" value={colors.bubble_color} onChange={v => updateField("bubble_color", v)}/>
             <ColorPicker testId="color-accent" label="Button / accent color" value={colors.accent_color} onChange={v => updateField("accent_color", v)}/>
@@ -284,6 +285,35 @@ function ColorPicker({ label, value, onChange, testId }) {
             <button key={c} onClick={() => onChange(c)} className={`w-6 h-6 rounded-full border-2 ${value.toLowerCase() === c.toLowerCase() ? "border-[#48BB78] ring-2 ring-[#48BB78] ring-offset-2 ring-offset-[#1A202C]" : "border-white/15"}`} style={{ background: c }} aria-label={c}></button>
           ))}
         </div>
+      </div>
+    </div>
+  );
+}
+
+function AvatarGenderPicker({ current, onChange }) {
+  const [profiles, setProfiles] = useState({});
+  useEffect(() => {
+    api.get("/avatar/profiles").then(r => setProfiles(r.data)).catch(() => {});
+  }, []);
+  return (
+    <div>
+      <Label className="text-[#A0AEC0]">Avatar profile (voice matched)</Label>
+      <p className="text-xs text-[#A0AEC0] mb-2">Choose the on-screen persona. Voice + face are matched automatically.</p>
+      <div className="grid grid-cols-3 gap-3" data-testid="avatar-gender-grid">
+        {Object.entries(profiles).map(([key, p]) => (
+          <button
+            key={key}
+            data-testid={`avatar-gender-${key}`}
+            onClick={() => onChange(key)}
+            className={`rounded-md border-2 overflow-hidden text-left transition-colors ${current === key ? "border-[#48BB78] ring-2 ring-[#48BB78] ring-offset-2 ring-offset-[#1A202C]" : "border-white/10 hover:border-white/30"}`}
+          >
+            <img src={p.image} alt={p.label} className="w-full h-24 object-cover"/>
+            <div className="p-2 bg-[#2D3748]">
+              <p className="text-white font-bold text-sm">{p.label}</p>
+              <p className="text-xs text-[#48BB78]">voice: {p.voice}</p>
+            </div>
+          </button>
+        ))}
       </div>
     </div>
   );

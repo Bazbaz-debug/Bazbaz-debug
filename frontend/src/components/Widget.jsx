@@ -1,14 +1,21 @@
 import { useState, useRef, useEffect } from "react";
-import { Bot, Send, PhoneCall, X, Loader2, Mic, MicOff, Volume2 } from "lucide-react";
+import { Bot, Send, PhoneCall, X, Loader2, Mic, MicOff, Volume2, Sparkles } from "lucide-react";
 import { API } from "@/lib/api";
 import { toast } from "sonner";
 
-const AVATAR_IMG = "https://images.pexels.com/photos/13108284/pexels-photo-13108284.jpeg?auto=compress&cs=tinysrgb&w=400";
+const AVATAR_FALLBACK = "https://images.pexels.com/photos/13108284/pexels-photo-13108284.jpeg?auto=compress&cs=tinysrgb&w=400";
+const GENDER_IMAGE = {
+  male: "https://images.pexels.com/photos/2379004/pexels-photo-2379004.jpeg?auto=compress&cs=tinysrgb&w=400",
+  female: "https://images.pexels.com/photos/774909/pexels-photo-774909.jpeg?auto=compress&cs=tinysrgb&w=400",
+  neutral: "https://images.pexels.com/photos/13108284/pexels-photo-13108284.jpeg?auto=compress&cs=tinysrgb&w=400",
+};
 
 export default function Widget({ tenant, colors, catalog }) {
   const bg = colors?.widget_bg || "#1A202C";
   const bubble = colors?.bubble_color || "#48BB78";
   const accent = colors?.accent_color || "#48BB78";
+  const gender = tenant?.avatar_gender || "female";
+  const avatarImg = GENDER_IMAGE[gender] || AVATAR_FALLBACK;
 
   const [open, setOpen] = useState(true);
   const [messages, setMessages] = useState([
@@ -20,8 +27,12 @@ export default function Widget({ tenant, colors, catalog }) {
   const [recording, setRecording] = useState(false);
   const [routing, setRouting] = useState(false);
   const [voiceMode, setVoiceMode] = useState(true);
+  const [lipsyncMode, setLipsyncMode] = useState(false);
+  const [videoUrl, setVideoUrl] = useState(null);
+  const [generatingVideo, setGeneratingVideo] = useState(false);
   const scrollRef = useRef(null);
   const audioRef = useRef(null);
+  const videoElRef = useRef(null);
   const mediaRecRef = useRef(null);
   const chunksRef = useRef([]);
   const sessionId = useRef(`sess-${Date.now()}`).current;
@@ -77,7 +88,35 @@ export default function Widget({ tenant, colors, catalog }) {
           } catch {}
         }
       }
-      if (acc && voiceMode) await playTTS(acc);
+      if (acc && voiceMode) {
+        if (lipsyncMode && tenant?.id) {
+          // Full lip-sync flow: fetch video + audio together from fal
+          setGeneratingVideo(true);
+          try {
+            const r = await fetch(`${API}/avatar/lipsync`, {
+              method: "POST", headers: {"Content-Type":"application/json"},
+              body: JSON.stringify({ tenant_id: tenant.id, text: acc.slice(0, 800) }),
+            });
+            const data = await r.json();
+            if (data.video_url) {
+              setVideoUrl(data.video_url);
+              setSpeaking(true);
+              // audio comes with the video itself
+            } else if (data.audio_b64) {
+              // Fallback: play audio only
+              const audio = new Audio(`data:audio/mpeg;base64,${data.audio_b64}`);
+              audioRef.current = audio;
+              setSpeaking(true);
+              audio.onended = () => setSpeaking(false);
+              audio.play();
+              if (data.error) toast.error(`Lipsync fallback: ${data.error.slice(0, 60)}`);
+            }
+          } catch (e) { toast.error("Video generation failed, using audio only"); await playTTS(acc); }
+          finally { setGeneratingVideo(false); }
+        } else {
+          await playTTS(acc);
+        }
+      }
     } catch (e) { toast.error("Chat failed"); }
     finally { setBusy(false); }
   };
@@ -156,10 +195,31 @@ export default function Widget({ tenant, colors, catalog }) {
     <div data-testid="sandbox-widget" className="absolute bottom-6 right-6 w-[360px] rounded-2xl overflow-hidden shadow-2xl flex flex-col" style={{ background: bg, border: "1px solid rgba(255,255,255,0.08)", maxHeight: "82%" }}>
       {/* Audio-reactive avatar */}
       <div className="relative">
-        <img src={AVATAR_IMG} alt="AI avatar" className="w-full h-40 object-cover transition-transform duration-300" style={{ transform: speaking ? "scale(1.03)" : "scale(1)" }}/>
+        {videoUrl ? (
+          <video
+            ref={videoElRef}
+            src={videoUrl}
+            autoPlay
+            playsInline
+            controls={false}
+            onEnded={() => { setSpeaking(false); }}
+            onError={() => { setVideoUrl(null); setSpeaking(false); }}
+            className="w-full h-40 object-cover transition-opacity duration-500"
+            data-testid="widget-avatar-video"
+          />
+        ) : (
+          <img src={avatarImg} alt="AI avatar" className="w-full h-40 object-cover transition-transform duration-300" style={{ transform: speaking ? "scale(1.03)" : "scale(1)" }} data-testid="widget-avatar-image"/>
+        )}
         {/* Reactive ring overlay when speaking */}
-        {speaking && (
+        {speaking && !videoUrl && (
           <div className="absolute inset-0 pointer-events-none" style={{ boxShadow: `inset 0 0 60px 8px ${accent}55` }}></div>
+        )}
+        {generatingVideo && (
+          <div className="absolute inset-0 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+            <div className="flex items-center gap-2 text-white text-xs font-bold">
+              <Loader2 className="animate-spin" size={14}/> Generating lip-synced video...
+            </div>
+          </div>
         )}
         <div className="absolute top-3 left-3 flex items-center gap-2 bg-black/60 backdrop-blur px-2.5 py-1 rounded-full">
           <span className="w-2 h-2 rounded-full pulse-dot" style={{ background: accent }}></span>
@@ -167,9 +227,14 @@ export default function Widget({ tenant, colors, catalog }) {
           {speaking && <Volume2 size={11} className="text-white"/>}
         </div>
         <button data-testid="widget-close-btn" onClick={() => setOpen(false)} className="absolute top-3 right-3 w-7 h-7 rounded-full bg-black/60 flex items-center justify-center text-white hover:bg-black/80"><X size={14}/></button>
-        <button data-testid="widget-voice-toggle" onClick={() => setVoiceMode(v => !v)} title="Toggle voice mode" className="absolute bottom-3 right-3 text-[10px] font-bold px-2 py-1 rounded-full" style={{ background: voiceMode ? accent : "rgba(0,0,0,0.6)", color: voiceMode ? "#1A202C" : "#fff" }}>
-          {voiceMode ? "VOICE ON" : "VOICE OFF"}
-        </button>
+        <div className="absolute bottom-3 right-3 flex gap-1.5">
+          <button data-testid="widget-lipsync-toggle" onClick={() => setLipsyncMode(v => !v)} title="Lip-synced video mode" className="text-[10px] font-bold px-2 py-1 rounded-full inline-flex items-center gap-1" style={{ background: lipsyncMode ? accent : "rgba(0,0,0,0.6)", color: lipsyncMode ? "#1A202C" : "#fff" }}>
+            <Sparkles size={10}/> {lipsyncMode ? "VIDEO" : "STILL"}
+          </button>
+          <button data-testid="widget-voice-toggle" onClick={() => setVoiceMode(v => !v)} title="Toggle voice mode" className="text-[10px] font-bold px-2 py-1 rounded-full" style={{ background: voiceMode ? accent : "rgba(0,0,0,0.6)", color: voiceMode ? "#1A202C" : "#fff" }}>
+            {voiceMode ? "VOICE ON" : "VOICE OFF"}
+          </button>
+        </div>
       </div>
       {/* Messages */}
       <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-4 space-y-3" style={{ maxHeight: 280 }}>
