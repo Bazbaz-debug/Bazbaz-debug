@@ -1,47 +1,60 @@
-import { useState, useRef, useEffect } from "react";
-import { Bot, Send, PhoneCall, X, Loader2, Mic, MicOff, Volume2, Sparkles } from "lucide-react";
+import { useState, useRef, useEffect, useCallback } from "react";
+import { Bot, Send, X, Loader2, Mic, MicOff, Volume2, Sparkles, PhoneCall, PhoneOff } from "lucide-react";
 import { API } from "@/lib/api";
 import { toast } from "sonner";
 
-const AVATAR_FALLBACK = "https://images.pexels.com/photos/13108284/pexels-photo-13108284.jpeg?auto=compress&cs=tinysrgb&w=400";
-const GENDER_IMAGE = {
-  male: "https://images.pexels.com/photos/2379004/pexels-photo-2379004.jpeg?auto=compress&cs=tinysrgb&w=400",
-  female: "https://images.pexels.com/photos/774909/pexels-photo-774909.jpeg?auto=compress&cs=tinysrgb&w=400",
-  neutral: "https://images.pexels.com/photos/13108284/pexels-photo-13108284.jpeg?auto=compress&cs=tinysrgb&w=400",
-};
+function avatarUrl(gender) {
+  const backend = process.env.REACT_APP_BACKEND_URL;
+  return `${backend}/api/public/avatar/${gender}.jpg`;
+}
+
+// Parse action markers out of streaming text: [[ACTION:escalate]] or [[ACTION:book:<slot>]]
+function extractActions(text) {
+  const actions = [];
+  const re = /\[\[ACTION:([a-zA-Z_]+)(?::([^\]]+))?\]\]/g;
+  let clean = text;
+  let m;
+  while ((m = re.exec(text)) !== null) {
+    actions.push({ kind: m[1].toLowerCase(), arg: (m[2] || "").trim() });
+  }
+  clean = text.replace(re, "").trim();
+  return { clean, actions };
+}
 
 export default function Widget({ tenant, colors, catalog }) {
   const bg = colors?.widget_bg || "#1A202C";
   const bubble = colors?.bubble_color || "#48BB78";
   const accent = colors?.accent_color || "#48BB78";
   const gender = tenant?.avatar_gender || "female";
-  const avatarImg = GENDER_IMAGE[gender] || AVATAR_FALLBACK;
 
   const [open, setOpen] = useState(true);
   const [messages, setMessages] = useState([
-    { role: "assistant", text: "Hi! I'm your live AI concierge. Tap the mic and speak in any language, or type below." },
+    { role: "assistant", text: "Hi! I'm your live AI concierge. Type below, tap the mic once, or press the phone icon for hands-free voice call mode." },
   ]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const [speaking, setSpeaking] = useState(false);
   const [recording, setRecording] = useState(false);
-  const [routing, setRouting] = useState(false);
   const [voiceMode, setVoiceMode] = useState(true);
   const [lipsyncMode, setLipsyncMode] = useState(false);
   const [videoUrl, setVideoUrl] = useState(null);
   const [generatingVideo, setGeneratingVideo] = useState(false);
+  const [callActive, setCallActive] = useState(false);
+  const [callListening, setCallListening] = useState(false);
   const scrollRef = useRef(null);
   const audioRef = useRef(null);
   const videoElRef = useRef(null);
   const mediaRecRef = useRef(null);
   const chunksRef = useRef([]);
+  const recognitionRef = useRef(null);
   const sessionId = useRef(`sess-${Date.now()}`).current;
+  const callActiveRef = useRef(false);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
   }, [messages, busy]);
 
-  const playTTS = async (text) => {
+  const playTTS = useCallback(async (text) => {
     if (!voiceMode || !text) return;
     try {
       const r = await fetch(`${API}/voice/tts`, {
@@ -53,14 +66,45 @@ export default function Widget({ tenant, colors, catalog }) {
         const audio = new Audio(`data:${data.mime};base64,${data.audio_base64}`);
         audioRef.current = audio;
         setSpeaking(true);
-        audio.onended = () => setSpeaking(false);
-        audio.onerror = () => setSpeaking(false);
-        await audio.play();
+        return new Promise((resolve) => {
+          audio.onended = () => { setSpeaking(false); resolve(); };
+          audio.onerror = () => { setSpeaking(false); resolve(); };
+          audio.play().catch(() => { setSpeaking(false); resolve(); });
+        });
       }
     } catch { setSpeaking(false); }
-  };
+  }, [voiceMode, tenant]);
 
-  const sendText = async (text) => {
+  const escalate = useCallback(async () => {
+    if (!tenant?.id) return;
+    try {
+      const res = await fetch(`${API}/chat/escalate`, {
+        method: "POST", headers: {"Content-Type":"application/json"},
+        body: JSON.stringify({ tenant_id: tenant.id, transcript: messages }),
+      });
+      const data = await res.json();
+      const stat = data.call_status === "live_call_placed" ? `LIVE CALL PLACED (${data.phone})` : `Routing (mocked) - transcript emailed to ${data.phone}`;
+      toast.success(stat);
+      setMessages(m => [...m, { role: "assistant", text: `Connecting you now. ${stat}` }]);
+    } catch { toast.error("Escalation failed"); }
+  }, [tenant, messages]);
+
+  const bookSlot = useCallback(async (slotText) => {
+    if (!tenant?.id) return;
+    try {
+      const r = await fetch(`${API}/booking/confirm`, {
+        method: "POST", headers: {"Content-Type":"application/json"},
+        body: JSON.stringify({ tenant_id: tenant.id, slot: slotText, customer_email: tenant.email }),
+      });
+      const data = await r.json();
+      const link = data.google_calendar_url;
+      setMessages(m => [...m, { role: "assistant", text: `Booked "${slotText}". Confirmation email sent.`, gcal: link }]);
+      toast.success("Booking confirmed - opening Google Calendar");
+      if (link) window.open(link, "_blank", "noopener,noreferrer");
+    } catch { toast.error("Booking failed"); }
+  }, [tenant]);
+
+  const sendText = useCallback(async (text) => {
     if (!text.trim() || busy) return;
     setMessages(m => [...m, { role: "user", text }, { role: "assistant", text: "" }]);
     setInput("");
@@ -83,44 +127,51 @@ export default function Widget({ tenant, colors, catalog }) {
             const p = JSON.parse(line.slice(6));
             if (p.delta) {
               acc += p.delta;
-              setMessages(m => { const c=[...m]; c[c.length-1]={role:"assistant",text:acc}; return c; });
+              const { clean } = extractActions(acc);
+              setMessages(m => { const c=[...m]; c[c.length-1]={role:"assistant",text:clean}; return c; });
             }
           } catch {}
         }
       }
-      if (acc && voiceMode) {
+      // Final: check for action markers
+      const { clean, actions } = extractActions(acc);
+      setMessages(m => { const c=[...m]; c[c.length-1]={role:"assistant",text:clean}; return c; });
+      // Play TTS with clean text
+      if (clean && voiceMode) {
         if (lipsyncMode && tenant?.id) {
-          // Full lip-sync flow: fetch video + audio together from fal
           setGeneratingVideo(true);
           try {
-            const r = await fetch(`${API}/avatar/lipsync`, {
+            const rr = await fetch(`${API}/avatar/lipsync`, {
               method: "POST", headers: {"Content-Type":"application/json"},
-              body: JSON.stringify({ tenant_id: tenant.id, text: acc.slice(0, 800) }),
+              body: JSON.stringify({ tenant_id: tenant.id, text: clean.slice(0, 800) }),
             });
-            const data = await r.json();
-            if (data.video_url) {
-              setVideoUrl(data.video_url);
+            const dd = await rr.json();
+            if (dd.video_url) {
+              setVideoUrl(dd.video_url);
               setSpeaking(true);
-              // audio comes with the video itself
-            } else if (data.audio_b64) {
-              // Fallback: play audio only
-              const audio = new Audio(`data:audio/mpeg;base64,${data.audio_b64}`);
-              audioRef.current = audio;
-              setSpeaking(true);
+            } else if (dd.audio_b64) {
+              const audio = new Audio(`data:audio/mpeg;base64,${dd.audio_b64}`);
+              audioRef.current = audio; setSpeaking(true);
               audio.onended = () => setSpeaking(false);
               audio.play();
-              if (data.error) toast.error(`Lipsync fallback: ${data.error.slice(0, 60)}`);
+              if (dd.error) toast.error(`Lipsync fallback: ${dd.error.slice(0,60)}`);
             }
-          } catch (e) { toast.error("Video generation failed, using audio only"); await playTTS(acc); }
+          } catch { await playTTS(clean); }
           finally { setGeneratingVideo(false); }
         } else {
-          await playTTS(acc);
+          await playTTS(clean);
         }
+      }
+      // Execute actions AFTER speaking
+      for (const a of actions) {
+        if (a.kind === "escalate") await escalate();
+        if (a.kind === "book") await bookSlot(a.arg || "Slot requested by visitor");
       }
     } catch (e) { toast.error("Chat failed"); }
     finally { setBusy(false); }
-  };
+  }, [busy, sessionId, tenant, voiceMode, lipsyncMode, playTTS, escalate, bookSlot]);
 
+  // ============ Hold-to-talk mic (single utterance via Whisper) ============
   const startRecording = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -136,9 +187,8 @@ export default function Widget({ tenant, colors, catalog }) {
           fd.append("file", blob, "voice.webm");
           const r = await fetch(`${API}/voice/stt`, { method: "POST", body: fd });
           const data = await r.json();
-          if (data.text) {
-            await sendText(data.text);
-          } else toast.error("Could not transcribe");
+          if (data.text) await sendText(data.text);
+          else toast.error("Could not transcribe");
         } catch { toast.error("Voice transcribe failed"); }
         finally { setBusy(false); }
       };
@@ -147,40 +197,59 @@ export default function Widget({ tenant, colors, catalog }) {
       setRecording(true);
     } catch (e) { toast.error("Mic permission needed"); }
   };
-
   const stopRecording = () => {
-    if (mediaRecRef.current && recording) {
-      mediaRecRef.current.stop();
-      setRecording(false);
-    }
+    if (mediaRecRef.current && recording) { mediaRecRef.current.stop(); setRecording(false); }
   };
 
-  const escalate = async () => {
-    if (!tenant?.id) return;
-    setRouting(true);
-    try {
-      const res = await fetch(`${API}/chat/escalate`, {
-        method: "POST", headers: {"Content-Type":"application/json"},
-        body: JSON.stringify({ tenant_id: tenant.id, transcript: messages }),
-      });
-      const data = await res.json();
-      const stat = data.call_status === "live_call_placed" ? `LIVE CALL PLACED (${data.phone})` : `Routing (mocked) - transcript emailed`;
-      toast.success(stat);
-      setMessages(m => [...m, { role: "assistant", text: `${data.status} ${stat}` }]);
-    } catch { toast.error("Escalation failed"); }
-    finally { setTimeout(() => setRouting(false), 1200); }
+  // ============ Voice Call mode: continuous SpeechRecognition loop ============
+  const startCall = async () => {
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SR) { toast.error("Voice call needs Chrome or Edge browser"); return; }
+    callActiveRef.current = true;
+    setCallActive(true);
+    setVoiceMode(true);
+    setMessages(m => [...m, { role: "assistant", text: "Voice call started. Speak naturally in any language. Press the red phone to end." }]);
+    // Speak greeting then start listening
+    await playTTS("Hi! I'm here. What can I help you with today?");
+    listenLoop();
   };
-
-  const book = async (slot = "Tomorrow 3:00 PM") => {
-    if (!tenant?.id) return;
-    try {
-      await fetch(`${API}/booking/confirm`, {
-        method: "POST", headers: {"Content-Type":"application/json"},
-        body: JSON.stringify({ tenant_id: tenant.id, slot, customer_email: tenant.email }),
+  const listenLoop = () => {
+    if (!callActiveRef.current) return;
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    const recog = new SR();
+    recog.continuous = false;
+    recog.interimResults = false;
+    recog.lang = ""; // auto detect
+    recog.onstart = () => setCallListening(true);
+    recog.onresult = async (e) => {
+      const t = e.results?.[0]?.[0]?.transcript?.trim();
+      setCallListening(false);
+      if (t) {
+        await sendText(t);
+      }
+      // After bot finishes speaking, TTS.onended triggers setSpeaking(false); we then loop again
+      const waitStart = Date.now();
+      const wait = () => new Promise(r => {
+        const iv = setInterval(() => {
+          if (!callActiveRef.current) { clearInterval(iv); r(); return; }
+          if (!audioRef.current || audioRef.current.paused || audioRef.current.ended) { clearInterval(iv); r(); }
+          if (Date.now() - waitStart > 30000) { clearInterval(iv); r(); }
+        }, 300);
       });
-      setMessages(m => [...m, { role: "assistant", text: `Booking confirmed for ${slot}. Confirmation email dispatched.` }]);
-      toast.success("Booking confirmed & emailed");
-    } catch { toast.error("Booking failed"); }
+      await wait();
+      if (callActiveRef.current) listenLoop();
+    };
+    recog.onerror = () => { setCallListening(false); if (callActiveRef.current) setTimeout(listenLoop, 800); };
+    recog.onend = () => setCallListening(false);
+    recognitionRef.current = recog;
+    try { recog.start(); } catch {}
+  };
+  const endCall = () => {
+    callActiveRef.current = false;
+    setCallActive(false); setCallListening(false);
+    try { recognitionRef.current?.stop(); } catch {}
+    if (audioRef.current) { try { audioRef.current.pause(); } catch {} }
+    setMessages(m => [...m, { role: "assistant", text: "Voice call ended." }]);
   };
 
   if (!open) {
@@ -193,37 +262,29 @@ export default function Widget({ tenant, colors, catalog }) {
 
   return (
     <div data-testid="sandbox-widget" className="absolute bottom-6 right-6 w-[360px] rounded-2xl overflow-hidden shadow-2xl flex flex-col" style={{ background: bg, border: "1px solid rgba(255,255,255,0.08)", maxHeight: "82%" }}>
-      {/* Audio-reactive avatar */}
+      {/* Avatar */}
       <div className="relative">
         {videoUrl ? (
-          <video
-            ref={videoElRef}
-            src={videoUrl}
-            autoPlay
-            playsInline
-            controls={false}
-            onEnded={() => { setSpeaking(false); }}
-            onError={() => { setVideoUrl(null); setSpeaking(false); }}
-            className="w-full h-40 object-cover transition-opacity duration-500"
-            data-testid="widget-avatar-video"
-          />
+          <video ref={videoElRef} src={videoUrl} autoPlay playsInline controls={false}
+            onEnded={() => setSpeaking(false)} onError={() => { setVideoUrl(null); setSpeaking(false); }}
+            className="w-full h-40 object-cover" data-testid="widget-avatar-video"/>
         ) : (
-          <img src={avatarImg} alt="AI avatar" className="w-full h-40 object-cover transition-transform duration-300" style={{ transform: speaking ? "scale(1.03)" : "scale(1)" }} data-testid="widget-avatar-image"/>
+          <img src={avatarUrl(gender)} alt="AI avatar" className="w-full h-40 object-cover bg-[#2D3748] transition-transform duration-300"
+            style={{ transform: speaking || callListening ? "scale(1.03)" : "scale(1)" }} data-testid="widget-avatar-image"/>
         )}
-        {/* Reactive ring overlay when speaking */}
-        {speaking && !videoUrl && (
+        {(speaking || callListening) && !videoUrl && (
           <div className="absolute inset-0 pointer-events-none" style={{ boxShadow: `inset 0 0 60px 8px ${accent}55` }}></div>
         )}
         {generatingVideo && (
           <div className="absolute inset-0 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-            <div className="flex items-center gap-2 text-white text-xs font-bold">
-              <Loader2 className="animate-spin" size={14}/> Generating lip-synced video...
-            </div>
+            <div className="flex items-center gap-2 text-white text-xs font-bold"><Loader2 className="animate-spin" size={14}/> Generating lip-synced video...</div>
           </div>
         )}
         <div className="absolute top-3 left-3 flex items-center gap-2 bg-black/60 backdrop-blur px-2.5 py-1 rounded-full">
           <span className="w-2 h-2 rounded-full pulse-dot" style={{ background: accent }}></span>
-          <span className="text-xs font-bold text-white">{speaking ? "SPEAKING" : "LIVE · AI Avatar"}</span>
+          <span className="text-xs font-bold text-white">
+            {callActive ? (callListening ? "LISTENING" : "IN CALL") : (speaking ? "SPEAKING" : "LIVE · AI Avatar")}
+          </span>
           {speaking && <Volume2 size={11} className="text-white"/>}
         </div>
         <button data-testid="widget-close-btn" onClick={() => setOpen(false)} className="absolute top-3 right-3 w-7 h-7 rounded-full bg-black/60 flex items-center justify-center text-white hover:bg-black/80"><X size={14}/></button>
@@ -237,11 +298,14 @@ export default function Widget({ tenant, colors, catalog }) {
         </div>
       </div>
       {/* Messages */}
-      <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-4 space-y-3" style={{ maxHeight: 280 }}>
+      <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-4 space-y-3" style={{ maxHeight: 300 }}>
         {messages.map((m, i) => (
           <div key={i} className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}>
             <div className="max-w-[80%] px-3 py-2 rounded-xl text-sm leading-relaxed" style={m.role === "user" ? { background: bubble, color: "#1A202C" } : { background: "#2D3748", color: "#fff" }}>
               {m.text || <Loader2 className="animate-spin" size={14}/>}
+              {m.gcal && (
+                <a href={m.gcal} target="_blank" rel="noopener noreferrer" data-testid="widget-gcal-link" className="mt-1.5 block text-xs font-bold underline" style={{ color: accent }}>Add to Google Calendar &rarr;</a>
+              )}
             </div>
           </div>
         ))}
@@ -259,20 +323,24 @@ export default function Widget({ tenant, colors, catalog }) {
           </div>
         )}
       </div>
-      {/* Actions */}
-      <div className="px-4 py-2 flex gap-2 border-t border-white/5">
-        <button data-testid="widget-escalate-btn" onClick={escalate} disabled={routing} className="flex-1 text-xs font-bold px-3 py-2 rounded-md border transition-colors" style={{ borderColor: accent, color: accent }}>
-          {routing ? "Routing..." : <span className="inline-flex items-center gap-1.5"><PhoneCall size={12}/> Talk to Live Human</span>}
-        </button>
-        <button data-testid="widget-book-btn" onClick={() => book()} className="text-xs font-bold px-3 py-2 rounded-md" style={{ background: bubble, color: "#1A202C" }}>Book slot</button>
-      </div>
-      {/* Input */}
+      {/* Input row */}
       <div className="p-3 border-t border-white/5 flex gap-2 items-center">
-        <button data-testid="widget-mic-btn" onMouseDown={startRecording} onMouseUp={stopRecording} onTouchStart={startRecording} onTouchEnd={stopRecording} className="w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 transition-transform" style={{ background: recording ? "#F56565" : accent, color: "#1A202C", transform: recording ? "scale(1.1)" : "scale(1)" }} title="Hold to talk">
+        {/* Voice Call toggle */}
+        {callActive ? (
+          <button data-testid="widget-endcall-btn" onClick={endCall} className="w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0" style={{ background: "#F56565", color: "#fff" }} title="End voice call">
+            <PhoneOff size={16}/>
+          </button>
+        ) : (
+          <button data-testid="widget-startcall-btn" onClick={startCall} className="w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0" style={{ background: accent, color: "#1A202C" }} title="Start hands-free voice call">
+            <PhoneCall size={16}/>
+          </button>
+        )}
+        {/* Hold-to-talk mic */}
+        <button data-testid="widget-mic-btn" onMouseDown={startRecording} onMouseUp={stopRecording} onMouseLeave={stopRecording} onTouchStart={startRecording} onTouchEnd={stopRecording} className="w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 transition-transform" style={{ background: recording ? "#F56565" : "#2D3748", color: recording ? "#fff" : accent, transform: recording ? "scale(1.1)" : "scale(1)" }} title="Hold to talk (one message)">
           {recording ? <MicOff size={16}/> : <Mic size={16}/>}
         </button>
-        <input data-testid="widget-chat-input" value={input} onChange={e => setInput(e.target.value)} onKeyDown={e => e.key === "Enter" && sendText(input)} placeholder={recording ? "Listening..." : "Speak or type (any language)"} className="flex-1 bg-[#2D3748] text-white text-sm rounded-md px-3 py-2 outline-none border border-white/5 focus:border-[#48BB78]/50"/>
-        <button data-testid="widget-send-btn" onClick={() => sendText(input)} disabled={busy} className="px-3 py-2 rounded-md font-bold flex items-center justify-center" style={{ background: accent, color: "#1A202C" }}>
+        <input data-testid="widget-chat-input" value={input} onChange={e => setInput(e.target.value)} onKeyDown={e => e.key === "Enter" && sendText(input)} placeholder={callActive ? "Voice call active..." : recording ? "Listening..." : "Type or ask 'talk to a human'"} disabled={callActive} className="flex-1 bg-[#2D3748] text-white text-sm rounded-md px-3 py-2 outline-none border border-white/5 focus:border-[#48BB78]/50 disabled:opacity-50"/>
+        <button data-testid="widget-send-btn" onClick={() => sendText(input)} disabled={busy || callActive} className="px-3 py-2 rounded-md font-bold flex items-center justify-center disabled:opacity-50" style={{ background: accent, color: "#1A202C" }}>
           {busy ? <Loader2 className="animate-spin" size={16}/> : <Send size={16}/>}
         </button>
       </div>

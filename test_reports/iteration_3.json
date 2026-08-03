@@ -1,0 +1,47 @@
+{
+  "summary": "Iteration 3 – Verified all 5 user-reported bug fixes. Backend: 11/11 pytest cases pass covering avatar endpoints (SVG fallback since fal wallet exhausted, as expected), /api/avatar/profiles listing 3 profiles pointing to /api/public/avatar/{gender}.jpg, real HTML crawl of vercel.com + stripe.com (no more Aurora Runner/NightHawk/Vortex Pro mock names, title contains site name, >=3 real items), chat/stream emits [[ACTION:escalate]] and [[ACTION:book:...]] markers, booking/confirm returns valid google_calendar_url. Frontend: demo login → dashboard OK, widget-escalate-btn and widget-book-btn confirmed REMOVED, widget-startcall-btn/widget-mic-btn/widget-send-btn/widget-avatar-image all present, startCall→endcall-btn transition works ('Voice call started'/'Voice call ended' messages appear), avatar image src correctly points to /api/public/avatar/female.jpg, Branding tab shows all 3 gender avatar tiles loading from backend. Zero console errors on /dashboard.",
+  "tested_scope": ["backend", "frontend", "integration"],
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "backend_tests_passed": [
+    "GET /api/public/avatar/{male,female,neutral}.jpg → 200 image/svg+xml (dicebear fallback due to exhausted fal wallet - acceptable), body >500 bytes",
+    "GET /api/avatar/profiles → 200 with 3 profiles, each image URL ends with /api/public/avatar/{gender}.jpg",
+    "POST /api/knowledge/crawl url=https://vercel.com → title contains 'Vercel', >=3 items, no mock names",
+    "POST /api/knowledge/crawl url=https://stripe.com → title contains 'Stripe', no mock names",
+    "POST /api/chat/stream 'talk to a real human' → response contains [[ACTION:escalate]] marker",
+    "POST /api/chat/stream book intent → [[ACTION:book:...]] marker emitted (first or confirmation turn)",
+    "POST /api/booking/confirm → returns google_calendar_url starting with https://www.google.com/calendar/render?action=TEMPLATE with text= and dates= params",
+    "GET /api/me/metrics → returns chats_today, bookings_week, voice_minutes, conversion_rate",
+    "PUT /api/me/profile bubble_color → 200 ok"
+  ],
+  "frontend_tests_passed": [
+    "demo@client.com login → /dashboard",
+    "widget-escalate-btn NOT present in DOM (removed)",
+    "widget-book-btn NOT present in DOM (removed)",
+    "widget-startcall-btn, widget-mic-btn, widget-send-btn, widget-avatar-image all present",
+    "avatar img src = REACT_APP_BACKEND_URL/api/public/avatar/female.jpg",
+    "click widget-startcall-btn → 'Voice call started' message + widget-endcall-btn appears",
+    "click widget-endcall-btn → 'Voice call ended' message + widget-startcall-btn reappears",
+    "Branding tab loads 3 gender tiles (male/female/neutral) from /api/public/avatar/",
+    "0 console errors on /dashboard"
+  ],
+  "test_report_links": [
+    "/app/backend/tests/test_iteration3.py",
+    "/app/backend/tests/backend_test.py",
+    "/app/test_reports/pytest/iter3_results.xml"
+  ],
+  "updated_files": ["/app/backend/tests/test_iteration3.py"],
+  "critical_code_review_comments": [
+    "server.py line 431 & 498 uses model 'gpt-5.6-terra' - non-standard model name; works via emergent proxy but confirm this is intentional (previously was 'gpt-4o-mini' etc).",
+    "server.py public_avatar has no fallback if _avatar_cache is empty (e.g. before startup finishes) - returns 404. Consider a stub SVG default.",
+    "Widget.jsx listenLoop() has no safeguard against runaway loop if SpeechRecognition instantly errors + onerror re-schedules listenLoop with 800ms delay – could cause tight failure loop on unsupported browsers. Consider max retries.",
+    "server.py chat_stream — Action markers instruction relies on LLM compliance; there's no server-side detection/normalisation. If model wraps marker in backticks or misspells, frontend won't intercept. Consider a regex-based post-processor server-side too.",
+    "server.py booking_confirm always books tomorrow 15:00 UTC regardless of the 'slot' string in request. The req.slot is only stored in details text – actual dates= param ignores parsed time. This is a functional issue: user requesting 'tomorrow 3pm' will get a calendar entry that doesn't parse their timezone or requested hour. Currently accepted as MVP but flag for future improvement."
+  ],
+  "success_rate": {"backend": "100% (11/11 iter3 + 9/9 iter2 unchanged)", "frontend": "100%"},
+  "test_credentials": "demo@client.com / Demo@12345, admin@rozio-killer.com / Admin@12345",
+  "seed_data_creation": "None - tests idempotent. Vercel and Stripe crawls updated demo user's catalog field.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Iteration 3 – all 5 user-reported bug fixes verified. Fal.ai wallet exhausted → /api/public/avatar/*.jpg returns image/svg+xml (dicebear) as expected fallback, tests accept both jpeg and svg. Twilio call remains mocked (TWILIO_PHONE_NUMBER empty). backend/tests/test_iteration3.py can be re-run as regression. Note: booking_confirm ignores actual slot time and always books tomorrow 15:00 UTC - see code review comment."
+}

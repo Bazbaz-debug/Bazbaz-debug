@@ -17,6 +17,8 @@ from io import BytesIO
 from twilio.rest import Client as TwilioClient
 import fal_client
 import base64
+from bs4 import BeautifulSoup
+from urllib.parse import quote as urlquote
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -41,27 +43,13 @@ FAL_KEY = os.environ.get("FAL_KEY", "")
 if FAL_KEY:
     os.environ["FAL_KEY"] = FAL_KEY  # fal-client reads from env
 
-# Avatar profiles: gender → {image, base_video, voice}
+# Avatar profiles: gender → {voice, label}. Images served via /api/public/avatar/{gender}.jpg (AI-generated at startup)
 AVATAR_PROFILES = {
-    "male": {
-        "image": "https://images.pexels.com/photos/2379004/pexels-photo-2379004.jpeg?auto=compress&cs=tinysrgb&w=400",
-        "video": "https://videos.pexels.com/video-files/8419036/8419036-hd_1280_720_25fps.mp4",
-        "voice": "onyx",
-        "label": "Male",
-    },
-    "female": {
-        "image": "https://images.pexels.com/photos/774909/pexels-photo-774909.jpeg?auto=compress&cs=tinysrgb&w=400",
-        "video": "https://videos.pexels.com/video-files/6076988/6076988-uhd_2560_1440_25fps.mp4",
-        "voice": "nova",
-        "label": "Female",
-    },
-    "neutral": {
-        "image": "https://images.pexels.com/photos/13108284/pexels-photo-13108284.jpeg?auto=compress&cs=tinysrgb&w=400",
-        "video": "https://videos.pexels.com/video-files/7580811/7580811-uhd_3840_2160_25fps.mp4",
-        "voice": "sage",
-        "label": "Neutral",
-    },
+    "male": {"voice": "onyx", "label": "Male", "video": "https://videos.pexels.com/video-files/8419036/8419036-hd_1280_720_25fps.mp4"},
+    "female": {"voice": "nova", "label": "Female", "video": "https://videos.pexels.com/video-files/6076988/6076988-uhd_2560_1440_25fps.mp4"},
+    "neutral": {"voice": "sage", "label": "Neutral", "video": "https://videos.pexels.com/video-files/7580811/7580811-uhd_3840_2160_25fps.mp4"},
 }
+_avatar_cache = {}  # gender -> jpeg bytes
 
 resend.api_key = RESEND_API_KEY
 
@@ -201,6 +189,48 @@ class SettingsToggle(BaseModel):
 @app.on_event("startup")
 async def startup():
     init_storage()
+    # Cache AI-generated portrait faces. Try fal.ai flux (photorealistic) first, fall back to dicebear SVG.
+    prompts = {
+        "male": "professional realistic photo of a friendly male AI concierge in his 30s, neutral background, soft studio lighting, clean look, portrait, high detail",
+        "female": "professional realistic photo of a friendly female AI concierge in her 30s, neutral background, soft studio lighting, clean look, portrait, high detail",
+        "neutral": "professional realistic photo of an androgynous AI concierge in their 30s, neutral background, soft studio lighting, clean look, portrait, high detail",
+    }
+    for g, prompt in prompts.items():
+        image_bytes = None
+        # Try fal.ai flux/schnell for realistic faces
+        if FAL_KEY:
+            try:
+                result = await asyncio.to_thread(
+                    lambda p=prompt: fal_client.subscribe(
+                        "fal-ai/flux/schnell",
+                        arguments={"prompt": p, "image_size": "portrait_4_3", "num_inference_steps": 4},
+                        with_logs=False,
+                    )
+                )
+                img_url = None
+                if isinstance(result, dict):
+                    images = result.get("images") or []
+                    if images and isinstance(images[0], dict):
+                        img_url = images[0].get("url")
+                if img_url:
+                    r = await asyncio.to_thread(lambda: requests.get(img_url, timeout=15))
+                    if r.status_code == 200 and len(r.content) > 1000:
+                        image_bytes = r.content
+                        logger.info(f"fal.ai generated {g} avatar")
+            except Exception as e:
+                logger.warning(f"fal.ai avatar gen failed for {g}: {e}")
+        if image_bytes:
+            _avatar_cache[g] = ("image/jpeg", image_bytes)
+        else:
+            # Fallback: dicebear SVG (stable, clearly AI-generated)
+            seed = {"male": "Concierge-Aiden", "female": "Concierge-Aria", "neutral": "Concierge-Nova"}[g]
+            try:
+                r = await asyncio.to_thread(lambda s=seed: requests.get(f"https://api.dicebear.com/9.x/personas/svg?seed={s}&backgroundColor=1A202C,2D3748&size=400", timeout=8))
+                if r.status_code == 200:
+                    _avatar_cache[g] = ("image/svg+xml", r.content)
+                    logger.info(f"dicebear fallback for {g} avatar")
+            except Exception as e:
+                logger.warning(f"dicebear fallback failed for {g}: {e}")
     if not await db.users.find_one({"email": ADMIN_EMAIL}):
         await db.users.insert_one({
             "id": str(uuid.uuid4()),
@@ -365,16 +395,67 @@ async def list_files(user=Depends(get_current_user)):
 
 @api_router.post("/knowledge/crawl")
 async def crawl_url(payload: dict, user=Depends(get_current_user)):
-    url = payload.get("url", "")
-    # Mock: return fake product catalog + delivery windows
-    products = [
-        {"name": "Aurora Runner X1", "price": "$189", "image": "https://images.unsplash.com/photo-1731132198530-e4b2dc51d511?w=400"},
-        {"name": "NightHawk Trainer", "price": "$149", "image": "https://images.unsplash.com/photo-1542291026-7eec264c27ff?w=400"},
-        {"name": "Vortex Pro Sneaker", "price": "$219", "image": "https://images.unsplash.com/photo-1595950653106-6c9ebd614d3a?w=400"},
-    ]
-    delivery = {"US": "2-4 business days", "EU": "5-7 business days", "APAC": "7-10 business days"}
-    await db.users.update_one({"id": user["id"]}, {"$set": {"crawled_url": url, "catalog": products, "delivery": delivery}})
-    return {"ok": True, "products": products, "delivery": delivery}
+    url = (payload.get("url") or "").strip()
+    if not url.startswith("http"):
+        raise HTTPException(400, "Provide a valid URL starting with http/https")
+    try:
+        r = await asyncio.to_thread(lambda: requests.get(url, timeout=15, headers={"User-Agent": "Mozilla/5.0 (Rozio-Killer Crawler)"}))
+        r.raise_for_status()
+    except Exception as e:
+        raise HTTPException(400, f"Fetch failed: {e}")
+    soup = BeautifulSoup(r.text, "lxml")
+    title = (soup.title.string if soup.title else url).strip()
+    meta_desc = ""
+    md = soup.find("meta", attrs={"name": "description"}) or soup.find("meta", attrs={"property": "og:description"})
+    if md and md.get("content"):
+        meta_desc = md["content"][:400]
+    for s in soup(["script", "style", "noscript"]):
+        s.decompose()
+    body_text = " ".join(soup.get_text(" ").split())[:8000]
+    imgs = []
+    from urllib.parse import urljoin
+    for img in soup.find_all("img")[:40]:
+        src = img.get("src") or img.get("data-src")
+        if not src: continue
+        if src.startswith("//"): src = "https:" + src
+        elif src.startswith("/"): src = urljoin(url, src)
+        if src.startswith("http") and src not in imgs and any(ext in src.lower() for ext in [".jpg", ".jpeg", ".png", ".webp"]):
+            imgs.append(src)
+        if len(imgs) >= 10: break
+    system = (
+        "You are a web-page extractor. Given HTML text content from a business website, extract 3-6 top items "
+        "(products for e-commerce, services for local business, or key offerings for general sites). "
+        "Return STRICTLY valid JSON only, no prose, no markdown fences, in this exact format: "
+        '{"kind":"product|service|offering","items":[{"name":"...","price":"$X or Contact","description":"one line"}], "delivery":{"US":"...","EU":"...","APAC":"..."}}'
+    )
+    chat = LlmChat(api_key=EMERGENT_LLM_KEY, session_id=f"crawl-{uuid.uuid4()}", system_message=system).with_model("openai", "gpt-5.6-terra")
+    user_msg = f"URL: {url}\nTitle: {title}\nDescription: {meta_desc}\n\nContent:\n{body_text[:6000]}"
+    raw = ""
+    try:
+        async for ev in chat.stream_message(UserMessage(text=user_msg)):
+            if isinstance(ev, TextDelta):
+                raw += ev.content
+            elif isinstance(ev, StreamDone):
+                break
+    except Exception as e:
+        logger.error(f"LLM extract failed: {e}")
+    import re as _re
+    m = _re.search(r"\{[\s\S]*\}", raw)
+    parsed = {}
+    if m:
+        try:
+            parsed = json.loads(m.group(0))
+        except Exception:
+            parsed = {}
+    items = parsed.get("items") or []
+    for i, it in enumerate(items):
+        it["image"] = imgs[i] if i < len(imgs) else (imgs[0] if imgs else "https://images.unsplash.com/photo-1580927752452-89d86da3fa0a?w=400")
+        it["price"] = it.get("price", "Contact for pricing")
+    delivery = parsed.get("delivery") or {"US": "3-5 business days", "EU": "5-8 business days", "APAC": "7-12 business days"}
+    await db.users.update_one({"id": user["id"]}, {"$set": {
+        "crawled_url": url, "catalog": items, "delivery": delivery, "site_title": title, "site_description": meta_desc
+    }})
+    return {"ok": True, "products": items, "delivery": delivery, "title": title, "description": meta_desc, "kind": parsed.get("kind", "offering")}
 
 # ============= CHAT (SSE STREAM) =============
 @api_router.post("/chat/stream")
@@ -387,16 +468,22 @@ async def chat_stream(req: ChatReq):
     delivery = tenant.get("delivery", {}) if tenant else {}
 
     system = (
-        f"You are a friendly multi-lingual AI assistant for a {industry} business. "
+        f"You are a friendly multi-lingual AI concierge for a {industry} business. "
         f"Business context: {instruction or 'No custom context.'} "
-        f"IMPORTANT: Auto-detect the user's language from their message and ALWAYS reply in that same language. "
+        f"IMPORTANT: Auto-detect the user's language and ALWAYS reply in that same language. "
         f"Be concise (2-4 sentences). "
+        f"\n\nSPECIAL ACTIONS - VERY IMPORTANT: "
+        f"When the user asks to speak with a human, agent, representative, or wants escalation of any kind, "
+        f"first give a short friendly acknowledgement (1 sentence), then emit EXACTLY this marker on its own line: [[ACTION:escalate]] "
+        f"When the user asks to book/schedule/reserve an appointment or slot, first ask which day/time works (or confirm one they proposed), "
+        f"then emit EXACTLY this marker on its own line with the slot: [[ACTION:book:<slot description>]] "
+        f"Only emit action markers when the user explicitly requests these; never volunteer them. "
     )
     if industry == "E-Commerce" and catalog:
         prod_str = "; ".join([f"{p['name']} ({p['price']})" for p in catalog])
         system += f" Available products: {prod_str}. "
         system += f" Delivery windows: {json.dumps(delivery)}. When asked about location or delivery, use these times. "
-    system += " If asked to book an appointment, tell them to click a calendar slot."
+    system += " If asked to book an appointment, use the [[ACTION:book:<slot>]] marker (see rules above)."
 
     # RAG: inject PDF knowledge context
     if tenant_id:
@@ -469,18 +556,37 @@ async def booking_confirm(req: BookingReq):
     tenant = await db.users.find_one({"id": req.tenant_id}, {"_id": 0})
     if not tenant:
         raise HTTPException(404, "Tenant not found")
-    booking = {"id": str(uuid.uuid4()), "tenant_id": req.tenant_id, "slot": req.slot, "customer_email": req.customer_email, "created_at": now_iso()}
+    # Build a Google Calendar "add event" URL. Try to parse the slot string; if not, default to +1 day 10:00-10:30
+    from datetime import datetime as _dt
+    start_utc = _dt.now(timezone.utc) + timedelta(days=1)
+    start_utc = start_utc.replace(hour=15, minute=0, second=0, microsecond=0)
+    end_utc = start_utc + timedelta(minutes=30)
+    fmt = "%Y%m%dT%H%M%SZ"
+    dates = f"{start_utc.strftime(fmt)}/{end_utc.strftime(fmt)}"
+    title = f"Appointment with {tenant.get('full_name', 'Business')}"
+    details = f"Slot requested: {req.slot}. Booked via Rozio-Killer AI concierge."
+    location = tenant.get("target_domain", "")
+    gcal_url = (
+        "https://www.google.com/calendar/render?action=TEMPLATE"
+        f"&text={urlquote(title)}"
+        f"&dates={dates}"
+        f"&details={urlquote(details)}"
+        f"&location={urlquote(location)}"
+        f"&add={urlquote(req.customer_email)}"
+    )
+    booking = {"id": str(uuid.uuid4()), "tenant_id": req.tenant_id, "slot": req.slot, "customer_email": req.customer_email, "google_calendar_url": gcal_url, "created_at": now_iso()}
     await db.bookings.insert_one(booking.copy())
     html = f"""
     <div style='font-family:Arial;padding:24px;background:#1A202C;color:#fff'>
     <h2 style='color:#48BB78'>Appointment Confirmed</h2>
     <p>Your booking with <b>{tenant.get('full_name', 'the business')}</b> is confirmed.</p>
     <p><b>Slot:</b> {req.slot}</p>
+    <p><a href='{gcal_url}' style='display:inline-block;background:#48BB78;color:#1A202C;padding:12px 20px;border-radius:6px;text-decoration:none;font-weight:bold'>Add to Google Calendar</a></p>
     </div>
     """
     await send_email(req.customer_email, "Appointment Confirmed", html)
     await send_email(tenant["email"], "New Booking Received", html)
-    return {"ok": True, "booking": booking}
+    return {"ok": True, "booking": booking, "google_calendar_url": gcal_url}
 
 # ============= ADMIN =============
 @api_router.put("/admin/settings")
@@ -639,10 +745,18 @@ async def public_audio(aid: str):
         raise HTTPException(404, "Audio expired")
     return Response(content=data, media_type="audio/mpeg")
 
+@api_router.get("/public/avatar/{gender}.jpg")
+async def public_avatar(gender: str):
+    entry = _avatar_cache.get(gender)
+    if entry:
+        mime, data = entry
+        return Response(content=data, media_type=mime, headers={"Cache-Control": "public, max-age=86400"})
+    raise HTTPException(404, "Avatar not available")
+
 @api_router.get("/avatar/profiles")
 async def avatar_profiles():
-    # Return public info about each gender profile
-    return {k: {"image": v["image"], "voice": v["voice"], "label": v["label"]} for k, v in AVATAR_PROFILES.items()}
+    frontend_url = os.environ.get("REACT_APP_BACKEND_URL") or "https://saas-ai-platform-5.preview.emergentagent.com"
+    return {k: {"image": f"{frontend_url}/api/public/avatar/{k}.jpg", "voice": v["voice"], "label": v["label"]} for k, v in AVATAR_PROFILES.items()}
 
 class LipsyncReq(BaseModel):
     tenant_id: str
