@@ -1,0 +1,108 @@
+{
+  "typography": {
+    "heading_font": "Cabinet Grotesk",
+    "body_font": "Satoshi",
+    "mono_font": "JetBrains Mono",
+    "h1": "text-5xl lg:text-6xl tracking-tighter font-black text-white",
+    "h2": "text-3xl lg:text-4xl tracking-tight font-bold text-white",
+    "h3": "text-xl lg:text-2xl tracking-tight font-semibold text-gray-100",
+    "body": "text-base text-gray-400 leading-relaxed",
+    "labels": "text-xs tracking-[0.2em] uppercase font-bold text-[#48BB78]"
+  },
+  "colors": {
+    "background": "#1A202C",
+    "surface": "#2D3748",
+    "surface_hover": "#4A5568",
+    "primary": "#48BB78",
+    "primary_hover": "#38A169",
+    "text_primary": "#FFFFFF",
+    "text_secondary": "#A0AEC0",
+    "border": "#2D3748",
+    "glass_panel": "rgba(26, 32, 44, 0.7)",
+    "glass_border": "rgba(255, 255, 255, 0.08)"
+  },
+  "visual_enhancers": {
+    "shadows": {
+      "glow": "0 0 24px rgba(72, 187, 120, 0.15)",
+      "ambient": "0 10px 40px -10px rgba(0,0,0,0.7)"
+    },
+    "textures": "Use subtle CSS noise overlays or dot grids on the right sandbox pane to prevent digital flatness.",
+    "borders": "1px solid border-white/10 for glassmorphism. Avoid heavy drop shadows, use inner-strokes."
+  },
+  "component_guidelines": {
+    "cards": "Flat solid surfaces using bg-[#2D3748] with border-[#4A5568]. Inside padding must be generous (p-6 or p-8). Hover state adds a subtle border glow (border-[#48BB78]/50).",
+    "buttons": "Sharp-edged or slightly rounded (rounded-md). Primary buttons: bg-[#48BB78] text-[#1A202C] font-bold. Hover: bg-[#38A169] text-white shadow-[0_0_15px_rgba(72,187,120,0.4)].",
+    "tabs": "Underline minimalist style or pill-based. Active tab should have text-[#48BB78] and a visible indicator (like Framer Motion underline).",
+    "chat_widget": "Floating crystal glass variant. backdrop-blur-xl bg-[#1A202C]/85 border border-white/10 shadow-2xl. User bubbles: bg-[#48BB78] text-[#1A202C]. AI bubbles: bg-[#2D3748] text-white.",
+    "color_picker": "Hide native input. Use custom styled circular swatches. Active state gets ring-2 ring-[#48BB78] ring-offset-2 ring-offset-[#1A202C].",
+    "calendar": "Shadcn calendar styled for dark mode. #48BB78 for selected dates, dark gray hover states. Remove outer borders for a seamless look."
+  },
+  "grids": {
+    "dashboard": "Split-screen architecture. Left Pane (Config): w-full lg:w-[45%] lg:max-w-xl overflow-y-auto px-6 py-8 md:px-12 md:py-12. Right Pane (Sandbox): hidden lg:flex lg:flex-1 h-screen sticky top-0 bg-[#0D1117] relative items-center justify-center.",
+    "landing_page": "Bento Grid ('Tetris' Mode). Asymmetric layouts mixing col-span-4 and col-span-8. Generous padding (py-24 to py-32).",
+    "spacing": "Gap-8 to gap-12 between major sections. Inner card padding p-6 or p-8."
+  },
+  "layouts": {
+    "sandbox_preview": "The right pane should look like a mock website. Add a fake header and hero, with the AI Chat Widget fixed to the bottom right of this specific container (absolute positioning relative to the right pane).",
+    "admin_panel": "Dense data table layout. Avoid bulky cards. Use border-collapse styling with a single 1px bottom border per row."
+  },
+  "motion": {
+    "hover_states": "Buttons scale up slightly (scale-[1.02]) with a 0.2s ease-out transform.",
+    "page_transitions": "Fade and slight slide-up (translate-y-4 to translate-y-0) staggered on children.",
+    "widget_preview": "Animate chat bubbles popping in with framer-motion (spring physics: stiffness 400, damping 25)."
+  },
+  "accessibility": {
+    "contrast": "Ensure text-secondary (#A0AEC0) against #1A202C passes WCAG AA. Primary text (#FFFFFF) is AAA.",
+    "focus": "focus-visible:ring-2 focus-visible:ring-[#48BB78] focus-visible:ring-offset-2 focus-visible:ring-offset-[#1A202C]",
+    "reduced_motion": "Wrap all animations with prefers-reduced-motion media query checks."
+  },
+  "media": {
+    "image_urls": [
+      {
+        "url": "https://images.pexels.com/photos/13108284/pexels-photo-13108284.jpeg",
+        "category": "AI Avatar Video Placeholder",
+        "description": "Professional portrait for the live AI video widget playing in the chat."
+      },
+      {
+        "url": "https://images.unsplash.com/photo-1731132198530-e4b2dc51d511?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjAzMzV8MHwxfHNlYXJjaHwxfHxuaWtlJTIwcnVubmluZyUyMHNob2VzJTIwZGFyayUyMGJhY2tncm91bmR8ZW58MHx8fHwxNzg1NzM2NjExfDA&ixlib=rb-4.1.0&q=85",
+        "category": "Chat Widget Product Card",
+        "description": "E-commerce product shown inside the chat widget simulation."
+      },
+      {
+        "url": "https://images.pexels.com/photos/7562087/pexels-photo-7562087.jpeg",
+        "category": "Landing Page Hero Background",
+        "description": "Abstract futuristic dark/neon tech pattern for landing page."
+      },
+      {
+        "url": "https://images.unsplash.com/photo-1669220235918-04cbf9e054b9",
+        "category": "Partner Logo",
+        "description": "Sponsor/Partner logo for trust band on the landing page."
+      }
+    ]
+  },
+  "3d_libraries": {
+    "recommendation": "Use framer-motion for UI physics. For the Sandbox background, implement a subtle CSS-based dot matrix or TSParticles (network mesh) to feel like an active AI zone."
+  },
+  "instructions_to_main_agent": [
+    "CRITICAL: The project uses `.js` (JSX) files, NOT `.tsx`. Do not use TypeScript syntax.",
+    "Always use 'Cabinet Grotesk' for Headings and 'Satoshi' for Body. Import them via Google Fonts or Fontshare in index.css.",
+    "Implement the Dashboard using a strict two-pane layout where the right side (Sandbox) is visually distinct with a darker #0D1117 background.",
+    "The AI Widget inside the Sandbox must feature a 'Live Video' container at the top (using the Avatar placeholder image) with a pulsing #48BB78 status dot.",
+    "Knowledge Ingestion tab requires a drag-and-drop zone styled with dashed borders and hover tint.",
+    "Widget Branding tab must include at least 3 custom color pickers.",
+    "Operational Matrix tab must contain a functional-looking calendar (Shadcn style) for booking slots.",
+    "All interactive and key informational elements MUST include a `data-testid` attribute (e.g., data-testid='login-button').",
+    "Use Lucide React for icons."
+  ],
+  "UNIVERSAL_GUIDELINES_FOR_MAIN_AGENT": [
+    "You tend to converge toward generic outputs. In frontend design, this creates the 'AI slop' aesthetic. Avoid this: make creative, distinctive frontends.",
+    "DO NOT use dark colors as gradients. Keep surfaces solid with sharp 1px borders.",
+    "Create depth through layered design elements with z-index hierarchy and glassmorphism (backdrop-blur-xl).",
+    "You MUST NOT apply universal transition like 'transition: all'. Explicitly state transitions.",
+    "You MUST NOT center align the app container (.App { text-align: center; }).",
+    "Every interaction needs micro-animations - hover states, transitions.",
+    "NEVER use placeholder text for logos or images. Use the provided image URLs.",
+    "DO NOT use complete `transparent` background in headers or overlays where content scrolls under. Use solid colors or backdrop blurs.",
+    "Always apply GENERAL UI UX DESIGN GUIDELINES."
+  ]
+}
