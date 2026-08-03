@@ -23,6 +23,17 @@ Phase 1:
 - Sandbox widget with GPT 5.6 Terra streaming (multi-language), Talk-to-Live-Human + Book slot
 - Admin panel with signup toggle, manual account creator, client table, per-row actions
 
+Phase 7 (2026-02-03) — Enterprise Refactor:
+- **Interactive Particle Canvas**: cursor-following glowing green particles with connection lines on landing hero + sandbox pane + preview modal. `ParticleCanvas.jsx` vanilla canvas, no deps.
+- **Admin File Permissions**: `/api/admin/settings` accepts `upload_policy` (`admin_only` | `client_self_serve`). `/api/knowledge/upload` enforces 403 for clients when policy is admin-only. Admin can upload PDFs on behalf of any tenant via `/api/admin/users/{id}/files/upload` and soft-delete via `/api/admin/files/{id}`. Files modal shows admin upload zone + Delete button per file.
+- **Avatar Background Picker**: per-tenant `avatar_background` (studio_dark / office / clean_gradient) added under gender picker in Branding tab.
+- **Telnyx Voice + SMS**: `TELNYX_API_KEY`, `TELNYX_PHONE_NUMBER`, `TELNYX_BUSINESS_OWNER_PHONE` wired. `/api/chat/escalate` prefers Telnyx Call Control → Twilio → mock, always logs to db.calls with provider tag. Booking + escalation fire SMS lead alerts to the business owner when Telnyx is configured.
+- **Amazon SES**: `send_email_sync()` prefers SES (`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `SES_FROM_EMAIL`) then falls back to Resend. Per-tenant `custom_smtp_from` field added on user model for future BYO-domain.
+- **Google Calendar OAuth**: `/api/google/oauth/start` returns auth URL, `/api/google/oauth/callback` stores refresh_token per tenant, `/api/google/oauth/disconnect` and `/api/google/status`. `/api/booking/confirm` creates a real Google Calendar event when tenant has connected; returns `google_event_id`. GoogleCalendarCard renders in Matrix tab with Connect/Disconnect flow.
+- **Setup Guides Page**: `/setup` route with copyable universal snippet + step-by-step Shopify, WordPress/WooCommerce, and Custom HTML install guides.
+- **Admin Overhaul (Phase 5 additions)**: 8-card Integration Health grid now includes Amazon SES, Telnyx Voice+SMS, Google Calendar OAuth alongside existing services.
+- Testing agent iteration 5: 9/9 backend + 100% frontend pass. All new keys intentionally empty; endpoints degrade gracefully as expected.
+
 Phase 6 (2026-02-03) — Bug fixes from user feedback:
 - **Removed** the "Talk to Live Human" and "Book slot" buttons from the widget UI
 - **Natural language triggers**: LLM system prompt now emits `[[ACTION:escalate]]` and `[[ACTION:book:<slot>]]` markers when user requests those in chat or voice. Frontend strips markers and auto-calls the correct endpoint
