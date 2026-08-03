@@ -17,21 +17,22 @@ Build a responsive full-stack multi-tenant SaaS app that outperforms Rozio AI. C
 - Storage: Emergent Object Storage via `EMERGENT_LLM_KEY`, init at startup.
 
 ## Implemented (2026-02-03)
-- Landing page with hero + bento features + trust bar + CTA + footer
-- Public signup toggle (Admin panel) → gates /register page
-- Auth: login, register (with mock verification email), forgot password (real Resend email + password rotation)
-- Client Dashboard split-screen (52% config / 48% sandbox) with 3 tabs
-  - Knowledge: industry dropdown, dynamic instruction textarea, PDF drag-and-drop → Emergent Object Storage, URL crawl mock (products + delivery windows)
-  - Branding: 3 color pickers (widget_bg, bubble, accent) with preset swatches
-  - Matrix: shadcn calendar multi-select slots, spending points card + increment
-- Sandbox Widget: floating chat with AI-avatar video header, live-color-sync to Branding tab, SSE streaming from GPT 5.6 Terra with auto multi-language, product cards for e-commerce, "Talk to Live Human" escalation with Resend transcript email + phone fallback text, "Book slot" with Resend confirmation emails
-- Admin `/admin`: signup toggle, Manual Account Creator (returns generated password), client database table with color swatches, per-row actions (Files modal, Instruction override dialog, Send forgot-password email, Deactivate/Activate)
-- Test credentials file at /app/memory/test_credentials.md
+Phase 1:
+- Landing + invite toggle + auth (login/register/forgot with Resend emails)
+- Dashboard split-screen + 3 tabs (Knowledge/Branding/Matrix) with PDF upload → Emergent Object Storage + URL crawl mock
+- Sandbox widget with GPT 5.6 Terra streaming (multi-language), Talk-to-Live-Human + Book slot
+- Admin panel with signup toggle, manual account creator, client table, per-row actions
+
+Phase 2 (2026-02-03):
+- **Live voice chat**: hold-to-talk mic → OpenAI Whisper STT → GPT 5.6 Terra → OpenAI TTS auto-plays reply. Full auto multi-language.
+- **Audio-reactive avatar**: static portrait scales + glows in accent color while TTS speaks (fal.ai talking-head deferred - no FAL_KEY yet)
+- **PDF Brain (RAG)**: pypdf extracts text on upload, top files injected into chat system prompt
+- **Embed script**: `/api/embed/{tenant_id}/loader.js` serves a self-executing script + iframe launcher; branding tab shows one-line snippet with Copy button
+- **Twilio phone fallback**: /api/chat/escalate triggers a real Twilio call when TWILIO_PHONE_NUMBER is set; falls back to mocked call log otherwise; every escalation stored in db.calls
 
 ## Backlog / Next
-- P1: Real web crawler (currently mocked to 3 products)
-- P1: Replace placeholder AI avatar image with actual live video (fal.ai talking head or D-ID)
-- P2: Shopify/WordPress embed script generator + copy-to-clipboard
-- P2: RAG over uploaded PDFs (currently PDFs stored but not fed to LLM)
-- P2: Real phone-fallback via Twilio
-- P2: Team seats / multi-user per tenant
+- P1: Add FAL_KEY → wire real talking-head video via fal.ai
+- P1: Set TWILIO_PHONE_NUMBER → real outbound calls
+- P2: `/embed-widget` iframe route (the loader references it; currently opens iframe to the same URL which shows the full app)
+- P2: k-NN retrieval over PDF chunks instead of dumping full content
+- P2: Twilio call recording + voicemail-to-transcript
