@@ -1,0 +1,40 @@
+{
+  "summary": "Iter 5 retest of iter 4 UI gap: PASSED. Admin.jsx Overview tab now renders upload-policy-group with upload-policy-client + upload-policy-admin buttons inside the PLATFORM CONFIG card. UI toggle works: clicking admin_only swaps green highlight (rgb(72,187,120)) to admin button + fires toast 'Upload policy: Admin only'; clicking client_self_serve swaps back. 0 console errors on /admin. Backend regression via /app/backend/tests/test_iteration4.py: 9/9 tests passed (3.28s). Includes upload_policy toggle enforcement (admin_only→demo /api/knowledge/upload 403; restore→non-PDF 400 not 403), admin file upload/delete on behalf, admin/health new fields (ses/telnyx_configured/telnyx_can_call/telnyx_phone/google_oauth all false), google/oauth/start 400, google/status disconnected, chat/escalate mocked, booking/confirm returns google_calendar_url template + null event_id, avatar_background persist.",
+  "tested_scope": ["backend regression", "frontend UI fix"],
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "backend_tests_passed": [
+    "test_public_settings_exposes_upload_policy",
+    "test_upload_policy_toggle_enforced",
+    "test_admin_upload_and_delete_on_behalf",
+    "test_admin_health_new_fields",
+    "test_google_oauth_start_400_when_unconfigured",
+    "test_google_status_disconnected",
+    "test_chat_escalate_mocked_and_persisted",
+    "test_booking_returns_gcal_url_no_event",
+    "test_avatar_background_persist"
+  ],
+  "frontend_tests_passed": [
+    "admin login → /admin (Overview tab active by default)",
+    "upload-policy-group visible with both upload-policy-client + upload-policy-admin buttons",
+    "Initial state: client_self_serve highlighted (rgb(72,187,120)), admin_only inactive (rgb(26,32,44))",
+    "Click admin_only → admin button turns green, client turns dark, toast 'Upload policy: Admin only' fires",
+    "Click client_self_serve → swaps back, toast 'Upload policy: Client self-serve' fires",
+    "0 console errors on /admin"
+  ],
+  "test_report_links": [
+    "/app/backend/tests/test_iteration4.py",
+    "/app/test_reports/pytest/iter5_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Iter 4 code review items still hold (booking confirm hardcoded 15:00 UTC, dashboard vs admin data-testid naming inconsistency 'tab-*' vs 'admin-tab-*', particle-canvas has no data-testid). Non-blocking."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "100% (9/9)", "frontend": "100% (upload-policy toggle UI works end-to-end)"},
+  "test_credentials": "admin@rozio-killer.com / Admin@12345, demo@client.com / Demo@12345",
+  "seed_data_creation": "Test PDF upload/soft-delete cycle on demo user (self-cleaning); demo avatar_background restored to studio_dark.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Phase 7 iter 5 is fully green. Fix applied by main agent (PLATFORM CONFIG card in Admin.jsx now contains both signup toggle + upload-policy toggle) is verified working. Regression suite path: /app/backend/tests/test_iteration4.py (9 tests ~3s). Fal wallet still exhausted (dicebear fallback expected). SES/Telnyx/Google OAuth keys still empty (graceful degrade endpoints verified)."
+}

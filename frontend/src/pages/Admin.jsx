@@ -127,12 +127,24 @@ export default function Admin() {
             </div>
 
             {/* PLATFORM CONFIG */}
-            <div className="bg-[#2D3748] rounded-md p-6 border border-white/5 flex items-center justify-between">
-              <div>
-                <h3 className="font-display font-bold text-lg mb-1">Toggle Public Signup Page</h3>
-                <p className="text-sm text-[#A0AEC0]">When OFF, landing hides public registration &mdash; access only via manual login.</p>
+            <div className="bg-[#2D3748] rounded-md p-6 border border-white/5 space-y-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="font-display font-bold text-lg mb-1">Toggle Public Signup Page</h3>
+                  <p className="text-sm text-[#A0AEC0]">When OFF, landing hides public registration &mdash; access only via manual login.</p>
+                </div>
+                <Switch data-testid="admin-signup-toggle" checked={signupEnabled} onCheckedChange={toggleSignup}/>
               </div>
-              <Switch data-testid="admin-signup-toggle" checked={signupEnabled} onCheckedChange={toggleSignup}/>
+              <div className="flex items-center justify-between border-t border-white/5 pt-4">
+                <div>
+                  <h3 className="font-display font-bold text-lg mb-1">File Upload Policy</h3>
+                  <p className="text-sm text-[#A0AEC0]">Who can upload knowledge base files. Admin-Only lets you gatekeep every tenant&apos;s files.</p>
+                </div>
+                <div className="flex gap-2" data-testid="upload-policy-group">
+                  <button data-testid="upload-policy-client" onClick={() => setUploadPolicy("client_self_serve")} className={`px-3 py-2 rounded-md text-xs font-bold ${uploadPolicy === "client_self_serve" ? "bg-[#48BB78] text-[#1A202C]" : "bg-[#1A202C] text-[#A0AEC0] border border-white/10"}`}>Client self-serve</button>
+                  <button data-testid="upload-policy-admin" onClick={() => setUploadPolicy("admin_only")} className={`px-3 py-2 rounded-md text-xs font-bold ${uploadPolicy === "admin_only" ? "bg-[#48BB78] text-[#1A202C]" : "bg-[#1A202C] text-[#A0AEC0] border border-white/10"}`}>Admin only</button>
+                </div>
+              </div>
             </div>
 
             {/* MANUAL ACCOUNT CREATOR */}
