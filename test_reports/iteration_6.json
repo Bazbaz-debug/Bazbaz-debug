@@ -1,0 +1,45 @@
+{
+  "summary": "Phase 8 iteration 6: ALL 5 targeted fixes verified. Backend 8/8 pytest passed (~44s). Frontend UI verified end-to-end: 0 console errors on /dashboard and /admin. (1) Chat LLM switched to openai gpt-4o - verified via LiteLLM logs and natural short replies. (2) OpenAI gpt-image-1 photorealistic PNG avatars: male=1.99MB, female=2.00MB, neutral=1.91MB, Content-Type image/png (fal.ai still exhausted per logs, dicebear NOT hit). (3) Voice-call speechSynthesis path present in Widget.jsx (near-zero latency); start-call → end-call UI transition works. (4) Chatbot initial greeting is exactly 'Hey — how can I help?' (short). Reply to 'hi' = 'Hey there! How can I help you today?' (36 chars, no boilerplate). (5) Full crawled site inventory injected into system prompt: crawl of apple.com/shop/buy-iphone yielded 4 real products (iPhone 17 Pro/Apple Watch Series 11/iPad Pro/MacBook Pro), and chat reply naturally referenced them by name+price. Escalation marker [[ACTION:escalate]] still emitted. Booking still returns google_calendar_url (google.com/calendar/render TEMPLATE URL).",
+  "tested_scope": ["backend regression + Phase 8 fixes", "frontend widget + branding + admin UI"],
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "backend_tests_passed": [
+    "test_avatar_returns_png_from_gpt_image_1[male] (1.99MB PNG)",
+    "test_avatar_returns_png_from_gpt_image_1[female] (2.00MB PNG)",
+    "test_avatar_returns_png_from_gpt_image_1[neutral] (1.91MB PNG)",
+    "test_crawl_apple_returns_real_products (4 real Apple products extracted via gpt-4o)",
+    "test_chat_stream_references_catalog (reply cites iPhone/Watch/iPad by name+price)",
+    "test_chat_hi_is_short_and_warm (36-char natural reply, no old boilerplate)",
+    "test_chat_escalation_marker ([[ACTION:escalate]] marker present)",
+    "test_booking_returns_gcal_url (google.com/calendar/render TEMPLATE url returned)"
+  ],
+  "frontend_tests_passed": [
+    "demo login → /dashboard, sandbox-widget present",
+    "Initial widget message = 'Hey — how can I help?' (short)",
+    "widget-avatar-image src contains /api/public/avatar/female.jpg (matches gender)",
+    "widget-product-0/1/2 rendered (iPhone 17 Pro / Apple Watch / iPad Pro)",
+    "widget-startcall-btn click → widget-endcall-btn appears (voice-call mode toggles)",
+    "Branding tab: avatar-gender-male/female/neutral tiles all show realistic PNG photos (fetched from /api/public/avatar/*.jpg)",
+    "admin@rozio-killer.com login → /admin loads",
+    "0 console errors across /dashboard and /admin"
+  ],
+  "test_report_links": [
+    "/app/backend/tests/test_iteration6_phase8.py",
+    "/app/test_reports/pytest/iter6_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Non-blocking: startup() sequentially generates 3 gpt-image-1 avatars (~15s each) → ~45s cold-start; occasional 502 during hot-reload while startup finishes. Consider async gather or lazy generation.",
+    "Non-blocking: server.py now 1186 lines - approaching 700-line split threshold; suggest splitting into routers (chat.py, knowledge.py, admin.py, avatar.py).",
+    "Non-blocking: crawl endpoint stores extracted products under 'catalog' key on user doc but the POST response returns them under 'products' key - fine but slightly inconsistent naming.",
+    "Non-blocking: Voice-call greeting message is added twice ('Voice call started. Just talk — I'll listen.' + 'Voice call ended.') in the transcript panel - fine for UX but could reset per session.",
+    "Non-blocking: crawl uses static requests.get (no JS render); worked for apple.com/shop/buy-iphone this time but JS-heavy shops may return empty catalog - consider Playwright/browserless fallback."
+  ],
+  "updated_files": ["/app/backend/tests/test_iteration6_phase8.py (new)"],
+  "success_rate": {"backend": "100% (8/8)", "frontend": "100% (all 8 UI checks green, 0 console errors)"},
+  "test_credentials": "admin@rozio-killer.com / Admin@12345, demo@client.com / Demo@12345 (unchanged)",
+  "seed_data_creation": "Booking test created 1 booking row for demo tenant with customer_email TEST_visitor@example.com; crawl overwrote demo tenant's catalog with 4 Apple products (persists intentionally as it's the tested behaviour).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Phase 8 fully green. Regression suite: /app/backend/tests/test_iteration6_phase8.py (8 tests ~45s). Note: backend cold-start takes ~45s because startup() sequentially generates 3 gpt-image-1 avatars; add retry loops in tests hitting /api/public/avatar/* right after a reload. fal.ai wallet still exhausted (log-visible) but gpt-image-1 works fine as fallback (~2MB PNGs). Demo tenant catalog now contains Apple products (not sneakers); adjust prompts if a fresh crawl of a different URL is needed."
+}

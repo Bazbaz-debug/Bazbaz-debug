@@ -29,7 +29,7 @@ export default function Widget({ tenant, colors, catalog }) {
 
   const [open, setOpen] = useState(true);
   const [messages, setMessages] = useState([
-    { role: "assistant", text: "Hi! I'm your live AI concierge. Type below, tap the mic once, or press the phone icon for hands-free voice call mode." },
+    { role: "assistant", text: "Hey — how can I help?" },
   ]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
@@ -56,6 +56,28 @@ export default function Widget({ tenant, colors, catalog }) {
 
   const playTTS = useCallback(async (text) => {
     if (!voiceMode || !text) return;
+    // In voice-call mode use browser's built-in speechSynthesis for near-zero latency
+    if (callActiveRef.current && "speechSynthesis" in window) {
+      try {
+        window.speechSynthesis.cancel();
+        const u = new SpeechSynthesisUtterance(text.slice(0, 1200));
+        u.rate = 1.02; u.pitch = 1.0; u.volume = 1.0;
+        // Prefer a voice matching the gender
+        const voices = window.speechSynthesis.getVoices();
+        const g = (tenant?.avatar_gender || "female").toLowerCase();
+        const pick = voices.find(v => (g === "male" && /male|david|daniel|guy/i.test(v.name))
+                                  || (g === "female" && /female|samantha|zira|jenny|aria/i.test(v.name))
+                                  || (g === "neutral" && /neutral|google/i.test(v.name)));
+        if (pick) u.voice = pick;
+        setSpeaking(true);
+        return new Promise((resolve) => {
+          u.onend = () => { setSpeaking(false); resolve(); };
+          u.onerror = () => { setSpeaking(false); resolve(); };
+          window.speechSynthesis.speak(u);
+        });
+      } catch {}
+    }
+    // Otherwise use OpenAI TTS (higher quality but ~1-2s latency)
     try {
       const r = await fetch(`${API}/voice/tts`, {
         method: "POST", headers: {"Content-Type":"application/json"},
@@ -208,9 +230,9 @@ export default function Widget({ tenant, colors, catalog }) {
     callActiveRef.current = true;
     setCallActive(true);
     setVoiceMode(true);
-    setMessages(m => [...m, { role: "assistant", text: "Voice call started. Speak naturally in any language. Press the red phone to end." }]);
-    // Speak greeting then start listening
-    await playTTS("Hi! I'm here. What can I help you with today?");
+    setMessages(m => [...m, { role: "assistant", text: "Voice call started. Just talk — I'll listen." }]);
+    // Greet fast via browser speech
+    await playTTS("Hey — you're on. What can I do for you?");
     listenLoop();
   };
   const listenLoop = () => {

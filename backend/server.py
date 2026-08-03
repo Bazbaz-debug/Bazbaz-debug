@@ -12,6 +12,7 @@ import os, uuid, logging, asyncio, jwt, bcrypt, requests, resend, json, secrets,
 
 from emergentintegrations.llm.chat import LlmChat, UserMessage, TextDelta, StreamDone
 from emergentintegrations.llm.openai import OpenAISpeechToText, OpenAITextToSpeech
+from emergentintegrations.llm.openai.image_generation import OpenAIImageGeneration
 from pypdf import PdfReader
 from io import BytesIO
 from twilio.rest import Client as TwilioClient
@@ -279,10 +280,20 @@ async def startup():
                         logger.info(f"fal.ai generated {g} avatar")
             except Exception as e:
                 logger.warning(f"fal.ai avatar gen failed for {g}: {e}")
+        # Fallback #1: OpenAI gpt-image-1 (works with Emergent LLM key)
+        if not image_bytes and EMERGENT_LLM_KEY:
+            try:
+                gen = OpenAIImageGeneration(api_key=EMERGENT_LLM_KEY)
+                imgs = await gen.generate_images(prompt=prompt, model="gpt-image-1", number_of_images=1, quality="low")
+                if imgs and len(imgs[0]) > 1000:
+                    image_bytes = imgs[0]
+                    logger.info(f"OpenAI gpt-image-1 generated {g} avatar")
+            except Exception as e:
+                logger.warning(f"OpenAI gpt-image-1 failed for {g}: {e}")
         if image_bytes:
-            _avatar_cache[g] = ("image/jpeg", image_bytes)
+            _avatar_cache[g] = ("image/png", image_bytes)
         else:
-            # Fallback: dicebear SVG (stable, clearly AI-generated)
+            # Fallback #2: dicebear SVG (stable illustrated fallback)
             seed = {"male": "Concierge-Aiden", "female": "Concierge-Aria", "neutral": "Concierge-Nova"}[g]
             try:
                 r = await asyncio.to_thread(lambda s=seed: requests.get(f"https://api.dicebear.com/9.x/personas/svg?seed={s}&backgroundColor=1A202C,2D3748&size=400", timeout=8))
@@ -496,7 +507,7 @@ async def crawl_url(payload: dict, user=Depends(get_current_user)):
         "Return STRICTLY valid JSON only, no prose, no markdown fences, in this exact format: "
         '{"kind":"product|service|offering","items":[{"name":"...","price":"$X or Contact","description":"one line"}], "delivery":{"US":"...","EU":"...","APAC":"..."}}'
     )
-    chat = LlmChat(api_key=EMERGENT_LLM_KEY, session_id=f"crawl-{uuid.uuid4()}", system_message=system).with_model("openai", "gpt-5.6-terra")
+    chat = LlmChat(api_key=EMERGENT_LLM_KEY, session_id=f"crawl-{uuid.uuid4()}", system_message=system).with_model("openai", "gpt-4o")
     user_msg = f"URL: {url}\nTitle: {title}\nDescription: {meta_desc}\n\nContent:\n{body_text[:6000]}"
     raw = ""
     try:
@@ -536,22 +547,32 @@ async def chat_stream(req: ChatReq):
     delivery = tenant.get("delivery", {}) if tenant else {}
 
     system = (
-        f"You are a friendly multi-lingual AI concierge for a {industry} business. "
+        f"You are a warm, natural-sounding human-like AI concierge for a {industry} business. "
         f"Business context: {instruction or 'No custom context.'} "
-        f"IMPORTANT: Auto-detect the user's language and ALWAYS reply in that same language. "
-        f"Be concise (2-4 sentences). "
+        f"Site title: {tenant.get('site_title','') if tenant else ''}. "
+        f"Site description: {tenant.get('site_description','') if tenant else ''}. "
+        f"\n\nYOUR STYLE: Talk like a real person on a phone call. Vary your sentence length. Use natural fillers occasionally like 'sure', 'got it', 'let me check'. NEVER open with the same greeting twice - if you already greeted, jump straight into helpful conversation. Be concise (1-3 sentences per reply). "
+        f"Auto-detect the user's language from every message and ALWAYS reply in that language. "
         f"\n\nSPECIAL ACTIONS - VERY IMPORTANT: "
-        f"When the user asks to speak with a human, agent, representative, or wants escalation of any kind, "
-        f"first give a short friendly acknowledgement (1 sentence), then emit EXACTLY this marker on its own line: [[ACTION:escalate]] "
-        f"When the user asks to book/schedule/reserve an appointment or slot, first ask which day/time works (or confirm one they proposed), "
-        f"then emit EXACTLY this marker on its own line with the slot: [[ACTION:book:<slot description>]] "
+        f"When the user asks to speak with a human, agent, representative, or wants escalation, "
+        f"first give a short acknowledgement (1 sentence), then emit EXACTLY this marker on its own line: [[ACTION:escalate]] "
+        f"When the user asks to book/schedule/reserve an appointment/slot, first confirm date+time, "
+        f"then emit EXACTLY: [[ACTION:book:<slot description>]] "
         f"Only emit action markers when the user explicitly requests these; never volunteer them. "
     )
-    if industry == "E-Commerce" and catalog:
-        prod_str = "; ".join([f"{p['name']} ({p['price']})" for p in catalog])
-        system += f" Available products: {prod_str}. "
-        system += f" Delivery windows: {json.dumps(delivery)}. When asked about location or delivery, use these times. "
-    system += " If asked to book an appointment, use the [[ACTION:book:<slot>]] marker (see rules above)."
+    # Inject full site catalog so the AI can actively sell/book from real inventory
+    catalog_lines = []
+    if catalog:
+        for p in catalog[:10]:
+            catalog_lines.append(f"- {p.get('name','')} | {p.get('price','')} | {p.get('description','')} | image: {p.get('image','')}")
+    if catalog_lines:
+        system += (
+            "\n\n=== LIVE SITE INVENTORY (use these real items when the user asks about products/services/pricing) ===\n"
+            + "\n".join(catalog_lines)
+            + "\n\nWhen recommending, mention the item name and price naturally, and if visitor wants to buy or book, offer to help right away. "
+        )
+    if delivery:
+        system += f"\nDelivery windows: {json.dumps(delivery)}. When asked about shipping/timeline by region, cite these accurately. "
 
     # RAG: inject PDF knowledge context
     if tenant_id:
@@ -563,7 +584,7 @@ async def chat_stream(req: ChatReq):
         if pdf_chunks:
             system += "\n\n=== INTERNAL KNOWLEDGE BASE (cite when relevant) ===\n" + "\n\n---\n\n".join(pdf_chunks)
 
-    chat = LlmChat(api_key=EMERGENT_LLM_KEY, session_id=req.session_id, system_message=system).with_model("openai", "gpt-5.6-terra")
+    chat = LlmChat(api_key=EMERGENT_LLM_KEY, session_id=req.session_id, system_message=system).with_model("openai", "gpt-4o")
 
     # increment chats counter
     if tenant_id:
