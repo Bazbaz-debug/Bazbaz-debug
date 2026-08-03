@@ -1,0 +1,55 @@
+{
+  "summary": "Phase 7 iteration 4 tested. Backend: 9/9 pytest cases pass in /app/backend/tests/test_iteration4.py — /api/settings/public exposes both public_signup_enabled+upload_policy; PUT /api/admin/settings toggles upload_policy (admin_only) and enforces 403 on /api/knowledge/upload for demo user, then restores to client_self_serve; POST /api/admin/users/{demo_uid}/files/upload accepts mini PDF and returns uploaded_by_admin=true; DELETE /api/admin/files/{id} soft-deletes and record disappears from /api/admin/users/{uid}/files listing; /api/admin/health returns all new fields (ses,telnyx_configured,telnyx_can_call,telnyx_phone,google_oauth) — all false as expected with empty env keys; /api/google/oauth/start returns 400 with 'Google OAuth not configured'; /api/google/status returns {connected:false}; /api/chat/escalate returns call_status='mocked', provider='mock' and inserts db.calls row; /api/booking/confirm returns google_calendar_url starting with google.com/calendar/render and google_event_id=null; PUT /api/me/profile avatar_background='office' persists on GET /api/me. Frontend: Landing / renders particle canvas (canvas.pointer-events-none present, 0 console errors); demo login→/dashboard OK; Branding tab avatar-bg-grid + avatar-bg-{studio_dark,office,clean_gradient} present, clicking office sets green border rgb(72,187,120); Matrix tab gcal-card + gcal-connect-btn visible; open-setup-btn navigates to /setup which renders guide-shopify, guide-wordpress, guide-html, universal-snippet, copy-universal-snippet; admin login→/admin OK; Clients tab (data-testid admin-tab-clients) shows btn-files-demo@client.com which opens dialog with admin-files-upload-zone + admin-files-upload-input. ISSUE: Admin Overview tab has NO upload-policy-group / upload-policy-client / upload-policy-admin UI although the React state (uploadPolicy) and handler (setUploadPolicy) are defined in Admin.jsx (lines 24, 43, 53). The JSX render block for the toggle group is missing.",
+  "tested_scope": ["backend", "frontend", "integration"],
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "Admin.jsx Overview tab", "issue": "Upload-policy toggle UI is missing – React state (uploadPolicy) and setUploadPolicy handler are declared but never rendered. Expected 3 elements with data-testid='upload-policy-group', 'upload-policy-client', 'upload-policy-admin'. Current count for each is 0. Users cannot toggle the upload_policy from the admin UI (only via direct API).", "selector": "[data-testid=\"upload-policy-group\"]", "priority": "HIGH"}
+    ],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "backend_tests_passed": [
+    "GET /api/settings/public returns public_signup_enabled + upload_policy",
+    "PUT /api/admin/settings upload_policy=admin_only → GET reflects; demo /api/knowledge/upload returns 403; restore to client_self_serve → 403 no longer returned",
+    "POST /api/admin/users/{demo_uid}/files/upload → 200 with uploaded_by_admin=true",
+    "DELETE /api/admin/files/{id} → 200 {ok:true}; file removed from listing",
+    "GET /api/admin/health includes ses/telnyx_configured/telnyx_can_call/telnyx_phone/google_oauth (all false with empty env - correct)",
+    "GET /api/google/oauth/start → 400 with detail 'Google OAuth not configured'",
+    "GET /api/google/status (authed) → {connected:false}",
+    "POST /api/chat/escalate → call_status='mocked', provider='mock' (db.calls persisted)",
+    "POST /api/booking/confirm → google_calendar_url template URL, google_event_id=null",
+    "PUT /api/me/profile avatar_background='office' persists on /api/me"
+  ],
+  "frontend_tests_passed": [
+    "/ Landing renders particle canvas (canvas.pointer-events-none present), 0 console errors",
+    "demo login → /dashboard",
+    "tab-branding: avatar-bg-grid with avatar-bg-studio_dark/office/clean_gradient present; click office → green border (rgb(72,187,120))",
+    "tab-matrix: gcal-card + gcal-connect-btn present",
+    "open-setup-btn navigates to /setup",
+    "/setup renders guide-shopify, guide-wordpress, guide-html, universal-snippet, copy-universal-snippet",
+    "admin login → /admin",
+    "admin-tab-clients (note actual testid) → btn-files-demo@client.com opens dialog with admin-files-upload-zone + admin-files-upload-input"
+  ],
+  "test_report_links": [
+    "/app/backend/tests/test_iteration4.py",
+    "/app/test_reports/pytest/iter4_results.xml"
+  ],
+  "action_items": [
+    "Admin.jsx (Overview tab): render the upload-policy toggle UI. Add a section similar to the 'Toggle Public Signup Page' card, containing a container div data-testid='upload-policy-group' with two buttons data-testid='upload-policy-client' (label 'Client self-serve') and data-testid='upload-policy-admin' (label 'Admin only'). Wire onClick to existing setUploadPolicy('client_self_serve'|'admin_only'). Highlight active state based on uploadPolicy state variable so testing agent can verify visual toggle."
+  ],
+  "critical_code_review_comments": [
+    "Admin.jsx: uploadPolicy state/handler declared (lines 24, 43, 53) but no JSX renders it — dead code path. Add the toggle UI in Overview tab.",
+    "Server.py test_upload_policy_toggle_enforced side effect: /api/knowledge/upload now allows non-PDF uploads by demo user to reach the .pdf extension check (400) which is correct; verified.",
+    "Review request referenced 'tab-clients'/'tab-branding' as testids — actual admin tab testids are 'admin-tab-*' (admin-tab-overview/clients/activity/settings) while dashboard tabs are 'tab-branding'/'tab-matrix'. Naming is inconsistent between the two pages; consider standardising.",
+    "Frontend particle canvas has no data-testid — the review request itself acknowledged this. Consider adding data-testid='particle-canvas' for future test stability.",
+    "Booking confirm still ignores customer_email address format validation and always books tomorrow 15:00 UTC when no HH:MM parsed (carried over from iter3)."
+  ],
+  "updated_files": ["/app/backend/tests/test_iteration4.py"],
+  "success_rate": {"backend": "100% (9/9)", "frontend": "~90% (1 missing UI element: upload-policy toggle group)"},
+  "test_credentials": "admin@rozio-killer.com / Admin@12345, demo@client.com / Demo@12345",
+  "seed_data_creation": "One TEST_admin.pdf uploaded and soft-deleted during admin upload test — self-cleaning. Demo user's avatar_background restored to 'studio_dark' post-test.",
+  "retest_needed": true,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Iteration 4 (Phase 7) — all new integration wiring (Telnyx/SES/Google OAuth) verified as graceful-degrade endpoints with empty keys, exactly as intended. Only one UI gap remains: Admin.jsx Overview tab needs to render the upload-policy toggle group (state exists, JSX missing). Once E1 adds those 3 data-testids, this iteration is fully green. Regression suite: /app/backend/tests/test_iteration4.py (9 tests, ~6s runtime). Fal wallet still exhausted → dicebear SVG fallback for avatars remains expected."
+}

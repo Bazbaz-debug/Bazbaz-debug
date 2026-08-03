@@ -19,6 +19,12 @@ import fal_client
 import base64
 from bs4 import BeautifulSoup
 from urllib.parse import quote as urlquote
+import telnyx
+import boto3
+from botocore.exceptions import ClientError as BotoClientError
+from google_auth_oauthlib.flow import Flow
+from googleapiclient.discovery import build as gapi_build
+from google.oauth2.credentials import Credentials as GoogleCreds
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -42,6 +48,25 @@ ESCALATION_TARGET = os.environ.get("ESCALATION_TARGET_PHONE", "")
 FAL_KEY = os.environ.get("FAL_KEY", "")
 if FAL_KEY:
     os.environ["FAL_KEY"] = FAL_KEY  # fal-client reads from env
+
+# Telnyx
+TELNYX_API_KEY = os.environ.get("TELNYX_API_KEY", "")
+TELNYX_PHONE_NUMBER = os.environ.get("TELNYX_PHONE_NUMBER", "")
+TELNYX_BUSINESS_OWNER_PHONE = os.environ.get("TELNYX_BUSINESS_OWNER_PHONE", "")
+if TELNYX_API_KEY:
+    telnyx.api_key = TELNYX_API_KEY
+
+# AWS SES
+AWS_ACCESS_KEY_ID = os.environ.get("AWS_ACCESS_KEY_ID", "")
+AWS_SECRET_ACCESS_KEY = os.environ.get("AWS_SECRET_ACCESS_KEY", "")
+AWS_SES_REGION = os.environ.get("AWS_SES_REGION", "us-east-1")
+SES_FROM_EMAIL = os.environ.get("SES_FROM_EMAIL", "")
+
+# Google Calendar OAuth
+GOOGLE_CLIENT_ID = os.environ.get("GOOGLE_CLIENT_ID", "")
+GOOGLE_CLIENT_SECRET = os.environ.get("GOOGLE_CLIENT_SECRET", "")
+GOOGLE_REDIRECT_URI = os.environ.get("GOOGLE_REDIRECT_URI", "")
+GOOGLE_SCOPES = ["https://www.googleapis.com/auth/calendar.events", "https://www.googleapis.com/auth/calendar.readonly"]
 
 # Avatar profiles: gender → {voice, label}. Images served via /api/public/avatar/{gender}.jpg (AI-generated at startup)
 AVATAR_PROFILES = {
@@ -123,13 +148,42 @@ async def require_admin(user=Depends(get_current_user)):
         raise HTTPException(403, "Admin only")
     return user
 
-def send_email_sync(to: str, subject: str, html: str):
+def send_email_sync(to: str, subject: str, html: str, from_override: str = None):
+    """Send email. Prefer Amazon SES if configured, fallback to Resend."""
+    sender = from_override or SES_FROM_EMAIL or SENDER_EMAIL
+    # Try SES first
+    if AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY and SES_FROM_EMAIL:
+        try:
+            ses = boto3.client("ses", region_name=AWS_SES_REGION, aws_access_key_id=AWS_ACCESS_KEY_ID, aws_secret_access_key=AWS_SECRET_ACCESS_KEY)
+            ses.send_email(
+                Source=sender,
+                Destination={"ToAddresses": [to]},
+                Message={"Subject": {"Data": subject}, "Body": {"Html": {"Data": html}}},
+            )
+            return True
+        except Exception as e:
+            logger.warning(f"SES send failed, falling back to Resend: {e}")
+    # Fallback: Resend
     try:
-        resend.Emails.send({"from": SENDER_EMAIL, "to": [to], "subject": subject, "html": html})
+        resend.Emails.send({"from": sender, "to": [to], "subject": subject, "html": html})
         return True
     except Exception as e:
         logger.error(f"Email send failed: {e}")
         return False
+
+def send_sms_sync(to: str, body: str):
+    """Send SMS via Telnyx if configured."""
+    if not (TELNYX_API_KEY and TELNYX_PHONE_NUMBER):
+        return {"ok": False, "reason": "telnyx_not_configured"}
+    try:
+        m = telnyx.Message.create(from_=TELNYX_PHONE_NUMBER, to=to, text=body[:1600])
+        return {"ok": True, "id": getattr(m, "id", None)}
+    except Exception as e:
+        logger.error(f"Telnyx SMS failed: {e}")
+        return {"ok": False, "reason": str(e)[:120]}
+
+async def send_sms(to: str, body: str):
+    return await asyncio.to_thread(send_sms_sync, to, body)
 
 async def send_email(to: str, subject: str, html: str):
     return await asyncio.to_thread(send_email_sync, to, subject, html)
@@ -157,6 +211,11 @@ class ProfileUpdate(BaseModel):
     spending_points: Optional[int] = None
     crawled_url: Optional[str] = None
     avatar_gender: Optional[str] = None
+    avatar_background: Optional[str] = None  # studio_dark / office / clean_gradient
+    business_owner_phone: Optional[str] = None
+    custom_smtp_host: Optional[str] = None
+    custom_smtp_user: Optional[str] = None
+    custom_smtp_from: Optional[str] = None
 
 class ChatReq(BaseModel):
     session_id: str
@@ -183,7 +242,8 @@ class AdminUpdateInstructionReq(BaseModel):
     custom_instruction: str
 
 class SettingsToggle(BaseModel):
-    public_signup_enabled: bool
+    public_signup_enabled: Optional[bool] = None
+    upload_policy: Optional[str] = None  # 'admin_only' | 'client_self_serve'
 
 # ============= STARTUP =============
 @app.on_event("startup")
@@ -267,7 +327,7 @@ async def startup():
     else:
         await db.users.update_one({"email": "demo@client.com"}, {"$set": {"password": hash_pw("Demo@12345"), "active": True}})
     if not await db.settings.find_one({"id": "app_settings"}):
-        await db.settings.insert_one({"id": "app_settings", "public_signup_enabled": True})
+        await db.settings.insert_one({"id": "app_settings", "public_signup_enabled": True, "upload_policy": "client_self_serve"})
     logger.info("Startup complete")
 
 @app.on_event("shutdown")
@@ -282,7 +342,10 @@ async def root():
 @api_router.get("/settings/public")
 async def get_public_settings():
     s = await db.settings.find_one({"id": "app_settings"}, {"_id": 0})
-    return {"public_signup_enabled": s.get("public_signup_enabled", True) if s else True}
+    return {
+        "public_signup_enabled": s.get("public_signup_enabled", True) if s else True,
+        "upload_policy": s.get("upload_policy", "client_self_serve") if s else "client_self_serve",
+    }
 
 @api_router.post("/auth/register")
 async def register(req: RegisterReq):
@@ -358,6 +421,11 @@ async def update_profile(req: ProfileUpdate, user=Depends(get_current_user)):
 
 @api_router.post("/knowledge/upload")
 async def upload_pdf(file: UploadFile = File(...), user=Depends(get_current_user)):
+    # Enforce upload policy
+    s = await db.settings.find_one({"id": "app_settings"}, {"_id": 0}) or {}
+    policy = s.get("upload_policy", "client_self_serve")
+    if policy == "admin_only" and user.get("role") != "admin":
+        raise HTTPException(403, "Uploads are restricted to admins by policy")
     if not file.filename.lower().endswith('.pdf'):
         raise HTTPException(400, "Only PDF files allowed")
     ext = "pdf"
@@ -531,25 +599,44 @@ async def escalate(req: EscalateReq):
     </div>
     """
     await send_email(tenant["email"], "Live Human Escalation - Chat Transcript", html)
-    # Twilio real call if credentials + FROM number configured
+    # Telnyx Call Control transfer (preferred) → Twilio fallback → mocked log
     call_status = "mocked"
     call_sid = None
-    if TWILIO_SID and TWILIO_TOKEN and TWILIO_FROM and ESCALATION_TARGET:
+    call_provider = "mock"
+    business_phone = tenant.get("business_owner_phone") or TELNYX_BUSINESS_OWNER_PHONE or ESCALATION_TARGET
+    if TELNYX_API_KEY and TELNYX_PHONE_NUMBER and business_phone:
         try:
-            twilio_client = TwilioClient(TWILIO_SID, TWILIO_TOKEN)
-            call = twilio_client.calls.create(
-                to=ESCALATION_TARGET,
-                from_=TWILIO_FROM,
-                twiml=f"<Response><Say voice='Polly.Joanna'>Live human escalation from Rozio Killer. A customer on {tenant.get('target_domain', 'your site')} is waiting. Transcript sent to your inbox.</Say></Response>",
-            )
-            call_sid = call.sid
+            def _telnyx_call():
+                return telnyx.Call.create(
+                    connection_id=os.environ.get("TELNYX_CONNECTION_ID", ""),
+                    to=business_phone,
+                    from_=TELNYX_PHONE_NUMBER,
+                    audio_url=None,
+                )
+            call = await asyncio.to_thread(_telnyx_call)
+            call_sid = getattr(call, "call_control_id", None) or getattr(call, "id", None)
             call_status = "live_call_placed"
+            call_provider = "telnyx"
+        except Exception as e:
+            logger.error(f"Telnyx call failed: {e}")
+            call_status = f"telnyx_failed: {str(e)[:60]}"
+    elif TWILIO_SID and TWILIO_TOKEN and TWILIO_FROM and business_phone:
+        try:
+            tw = TwilioClient(TWILIO_SID, TWILIO_TOKEN)
+            c = tw.calls.create(to=business_phone, from_=TWILIO_FROM,
+                twiml=f"<Response><Say voice='Polly.Joanna'>Live human escalation from Rozio Killer. A customer on {tenant.get('target_domain', 'your site')} is waiting.</Say></Response>")
+            call_sid = c.sid
+            call_status = "live_call_placed"
+            call_provider = "twilio"
         except Exception as e:
             logger.error(f"Twilio call failed: {e}")
-            call_status = f"failed: {str(e)[:80]}"
-    await db.calls.insert_one({"id": str(uuid.uuid4()), "tenant_id": req.tenant_id, "target": ESCALATION_TARGET, "status": call_status, "sid": call_sid, "created_at": now_iso()})
+            call_status = f"twilio_failed: {str(e)[:60]}"
+    # SMS lead alert if Telnyx configured
+    if TELNYX_API_KEY and TELNYX_PHONE_NUMBER and business_phone:
+        await send_sms(business_phone, f"Rozio-Killer: High-intent lead escalation from {tenant.get('target_domain','your site')}. Check email for transcript.")
+    await db.calls.insert_one({"id": str(uuid.uuid4()), "tenant_id": req.tenant_id, "target": business_phone, "status": call_status, "sid": call_sid, "provider": call_provider, "created_at": now_iso()})
     await db.metrics.update_one({"tenant_id": req.tenant_id}, {"$inc": {"escalations": 1}}, upsert=True)
-    return {"ok": True, "status": "Routing to Live Line...", "phone": ESCALATION_TARGET or "+1-555-ROZIO-AI", "call_status": call_status, "call_sid": call_sid}
+    return {"ok": True, "status": "Routing to Live Line...", "phone": business_phone or "+1-555-ROZIO-AI", "call_status": call_status, "call_sid": call_sid, "provider": call_provider}
 
 @api_router.post("/booking/confirm")
 async def booking_confirm(req: BookingReq):
@@ -604,12 +691,42 @@ async def booking_confirm(req: BookingReq):
     """
     await send_email(req.customer_email, "Appointment Confirmed", html)
     await send_email(tenant["email"], "New Booking Received", html)
-    return {"ok": True, "booking": booking, "google_calendar_url": gcal_url}
+    # Try Google Calendar event creation if tenant has OAuth linked
+    gcal_event_id = None
+    if tenant.get("google_refresh_token") and GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET:
+        try:
+            creds = GoogleCreds(
+                token=None,
+                refresh_token=tenant["google_refresh_token"],
+                token_uri="https://oauth2.googleapis.com/token",
+                client_id=GOOGLE_CLIENT_ID, client_secret=GOOGLE_CLIENT_SECRET, scopes=GOOGLE_SCOPES,
+            )
+            def _create_event():
+                service = gapi_build("calendar", "v3", credentials=creds, cache_discovery=False)
+                event = {
+                    "summary": title,
+                    "description": details,
+                    "start": {"dateTime": start_utc.isoformat().replace("+00:00", "Z")},
+                    "end": {"dateTime": end_utc.isoformat().replace("+00:00", "Z")},
+                    "attendees": [{"email": req.customer_email}],
+                }
+                return service.events().insert(calendarId="primary", body=event, sendUpdates="all").execute()
+            ev = await asyncio.to_thread(_create_event)
+            gcal_event_id = ev.get("id")
+        except Exception as e:
+            logger.error(f"Google Calendar create failed: {e}")
+    # SMS lead alert to business owner
+    biz_phone = tenant.get("business_owner_phone") or TELNYX_BUSINESS_OWNER_PHONE
+    if TELNYX_API_KEY and TELNYX_PHONE_NUMBER and biz_phone:
+        await send_sms(biz_phone, f"New booking: {req.slot} - {req.customer_email}. Rozio-Killer.")
+    return {"ok": True, "booking": booking, "google_calendar_url": gcal_url, "google_event_id": gcal_event_id}
 
 # ============= ADMIN =============
 @api_router.put("/admin/settings")
 async def admin_toggle(req: SettingsToggle, admin=Depends(require_admin)):
-    await db.settings.update_one({"id": "app_settings"}, {"$set": {"public_signup_enabled": req.public_signup_enabled}}, upsert=True)
+    updates = {k: v for k, v in req.model_dump().items() if v is not None}
+    if updates:
+        await db.settings.update_one({"id": "app_settings"}, {"$set": updates}, upsert=True)
     return {"ok": True}
 
 @api_router.get("/admin/users")
@@ -675,6 +792,112 @@ async def admin_user_files(user_id: str, admin=Depends(require_admin)):
     files = await db.files.find({"user_id": user_id, "is_deleted": False}, {"_id": 0}).to_list(200)
     return files
 
+@api_router.post("/admin/users/{user_id}/files/upload")
+async def admin_upload_for_user(user_id: str, file: UploadFile = File(...), admin=Depends(require_admin)):
+    if not file.filename.lower().endswith('.pdf'):
+        raise HTTPException(400, "Only PDF files allowed")
+    target = await db.users.find_one({"id": user_id}, {"_id": 0})
+    if not target:
+        raise HTTPException(404, "User not found")
+    path = f"{APP_NAME}/uploads/{user_id}/{uuid.uuid4()}.pdf"
+    data = await file.read()
+    result = put_object(path, data, "application/pdf")
+    text = ""
+    try:
+        reader = PdfReader(BytesIO(data))
+        for page in reader.pages[:30]:
+            text += (page.extract_text() or "") + "\n"
+        text = text[:30000]
+    except Exception as e:
+        logger.warning(f"PDF extract failed: {e}")
+    rec = {"id": str(uuid.uuid4()), "user_id": user_id, "storage_path": result["path"],
+           "original_filename": file.filename, "size": result["size"], "content": text,
+           "is_deleted": False, "created_at": now_iso(), "uploaded_by_admin": True}
+    await db.files.insert_one(rec.copy())
+    return {k: v for k, v in rec.items() if k != "content"}
+
+@api_router.delete("/admin/files/{file_id}")
+async def admin_delete_file(file_id: str, admin=Depends(require_admin)):
+    r = await db.files.update_one({"id": file_id}, {"$set": {"is_deleted": True}})
+    if r.matched_count == 0:
+        raise HTTPException(404, "File not found")
+    return {"ok": True}
+
+# ============= GOOGLE CALENDAR OAUTH =============
+def _google_flow(redirect_uri: str):
+    if not (GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET):
+        raise HTTPException(400, "Google OAuth not configured. Set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET in .env")
+    return Flow.from_client_config(
+        {"web": {
+            "client_id": GOOGLE_CLIENT_ID, "client_secret": GOOGLE_CLIENT_SECRET,
+            "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+            "token_uri": "https://oauth2.googleapis.com/token",
+            "redirect_uris": [redirect_uri],
+        }},
+        scopes=GOOGLE_SCOPES, redirect_uri=redirect_uri,
+    )
+
+@api_router.get("/google/oauth/start")
+async def google_oauth_start(user=Depends(get_current_user)):
+    flow = _google_flow(GOOGLE_REDIRECT_URI)
+    state_token = f"{user['id']}.{secrets.token_urlsafe(16)}"
+    await db.oauth_states.insert_one({"id": state_token, "user_id": user["id"], "created_at": now_iso()})
+    auth_url, _ = flow.authorization_url(access_type="offline", include_granted_scopes="true", prompt="consent", state=state_token)
+    return {"auth_url": auth_url}
+
+@api_router.get("/google/oauth/callback")
+async def google_oauth_callback(code: str = Query(...), state: str = Query(...)):
+    st = await db.oauth_states.find_one({"id": state}, {"_id": 0})
+    if not st:
+        raise HTTPException(400, "Invalid state")
+    flow = _google_flow(GOOGLE_REDIRECT_URI)
+    try:
+        await asyncio.to_thread(lambda: flow.fetch_token(code=code))
+    except Exception as e:
+        raise HTTPException(400, f"OAuth failed: {e}")
+    creds = flow.credentials
+    if not creds.refresh_token:
+        raise HTTPException(400, "No refresh_token returned. Revoke access in Google account and retry.")
+    await db.users.update_one({"id": st["user_id"]}, {"$set": {
+        "google_refresh_token": creds.refresh_token,
+        "google_connected_at": now_iso(),
+    }})
+    await db.oauth_states.delete_one({"id": state})
+    frontend = os.environ.get("REACT_APP_BACKEND_URL", "").rstrip("/") or ""
+    return Response(content=f"<html><body style='background:#1A202C;color:#fff;font-family:sans-serif;padding:40px;text-align:center'><h2 style='color:#48BB78'>Google Calendar connected!</h2><p>You can close this tab.</p><script>setTimeout(()=>{{window.close();window.location.href='{frontend}/dashboard';}}, 1500);</script></body></html>", media_type="text/html")
+
+@api_router.post("/google/oauth/disconnect")
+async def google_oauth_disconnect(user=Depends(get_current_user)):
+    await db.users.update_one({"id": user["id"]}, {"$unset": {"google_refresh_token": "", "google_connected_at": ""}})
+    return {"ok": True}
+
+@api_router.get("/google/status")
+async def google_status(user=Depends(get_current_user)):
+    return {"connected": bool(user.get("google_refresh_token")), "connected_at": user.get("google_connected_at")}
+
+@api_router.get("/google/calendar/free-slots")
+async def google_free_slots(user=Depends(get_current_user)):
+    if not user.get("google_refresh_token"):
+        return {"connected": False, "slots": []}
+    creds = GoogleCreds(token=None, refresh_token=user["google_refresh_token"],
+        token_uri="https://oauth2.googleapis.com/token",
+        client_id=GOOGLE_CLIENT_ID, client_secret=GOOGLE_CLIENT_SECRET, scopes=GOOGLE_SCOPES)
+    try:
+        def _read():
+            service = gapi_build("calendar", "v3", credentials=creds, cache_discovery=False)
+            now = datetime.now(timezone.utc)
+            end = now + timedelta(days=7)
+            busy = service.freebusy().query(body={
+                "timeMin": now.isoformat().replace("+00:00","Z"),
+                "timeMax": end.isoformat().replace("+00:00","Z"),
+                "items": [{"id": "primary"}],
+            }).execute()
+            return busy
+        result = await asyncio.to_thread(_read)
+        return {"connected": True, "raw": result}
+    except Exception as e:
+        return {"connected": True, "error": str(e)[:120]}
+
 # ============= ADMIN ANALYTICS =============
 @api_router.get("/admin/stats")
 async def admin_stats(admin=Depends(require_admin)):
@@ -730,9 +953,14 @@ async def admin_health(admin=Depends(require_admin)):
     return {
         "emergent_llm": bool(EMERGENT_LLM_KEY),
         "resend": bool(RESEND_API_KEY),
+        "ses": bool(AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY and SES_FROM_EMAIL),
         "twilio_configured": bool(TWILIO_SID and TWILIO_TOKEN),
         "twilio_can_call": bool(TWILIO_SID and TWILIO_TOKEN and TWILIO_FROM),
         "twilio_from": TWILIO_FROM or None,
+        "telnyx_configured": bool(TELNYX_API_KEY),
+        "telnyx_can_call": bool(TELNYX_API_KEY and TELNYX_PHONE_NUMBER),
+        "telnyx_phone": TELNYX_PHONE_NUMBER or None,
+        "google_oauth": bool(GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET),
         "escalation_target": ESCALATION_TARGET or None,
         "fal_configured": bool(FAL_KEY),
         "object_storage": bool(storage_key),

@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import api from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
-import { Shield, UserPlus, KeyRound, PowerOff, Power, Files, LogOut, Edit3, Save, Bot, Activity, MessagesSquare, CalendarCheck, Mic, PhoneCall, Users, Video, FileText, TrendingUp, CheckCircle2, XCircle, Settings, BarChart3 } from "lucide-react";
+import { Shield, UserPlus, KeyRound, PowerOff, Power, Files, LogOut, Edit3, Save, Bot, Activity, MessagesSquare, CalendarCheck, Mic, PhoneCall, Users, Video, FileText, TrendingUp, CheckCircle2, XCircle, Settings, BarChart3, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -21,6 +21,7 @@ export default function Admin() {
   const nav = useNavigate();
   const [signupEnabled, setSignupEnabled] = useState(true);
   const [users, setUsers] = useState([]);
+  const [uploadPolicy, setUploadPolicyState] = useState("client_self_serve");
   const [stats, setStats] = useState({});
   const [health, setHealth] = useState({});
   const [activity, setActivity] = useState({ bookings: [], calls: [] });
@@ -39,6 +40,7 @@ export default function Admin() {
       api.get("/admin/activity"),
     ]);
     setSignupEnabled(s.data.public_signup_enabled);
+    setUploadPolicyState(s.data.upload_policy || "client_self_serve");
     setUsers(u.data);
     setStats(st.data);
     setHealth(h.data);
@@ -48,6 +50,7 @@ export default function Admin() {
   useEffect(() => { load(); const t = setInterval(load, 10000); return () => clearInterval(t); }, [load]);
 
   const toggleSignup = async (v) => { setSignupEnabled(v); await api.put("/admin/settings", { public_signup_enabled: v }); toast.success(`Public signup ${v ? "enabled" : "disabled"}`); };
+  const setUploadPolicy = async (v) => { setUploadPolicyState(v); await api.put("/admin/settings", { upload_policy: v }); toast.success(`Upload policy: ${v === "admin_only" ? "Admin only" : "Client self-serve"}`); };
 
   const createAccount = async () => {
     try {
@@ -114,10 +117,12 @@ export default function Admin() {
               <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
                 <HealthCard testId="health-llm" ok={health.emergent_llm} label="Emergent LLM (GPT 5.6 Terra)" detail={health.emergent_llm ? "Connected" : "Missing key"}/>
                 <HealthCard testId="health-resend" ok={health.resend} label="Resend Emails" detail={health.resend ? "Sending live" : "Missing key"}/>
-                <HealthCard testId="health-twilio" ok={health.twilio_can_call} label="Twilio Voice" detail={health.twilio_can_call ? `From ${health.twilio_from}` : health.twilio_configured ? "SID/token set - need FROM number" : "Not configured"}/>
+                <HealthCard testId="health-ses" ok={health.ses} label="Amazon SES" detail={health.ses ? "Preferred sender" : "Add AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, SES_FROM_EMAIL"}/>
+                <HealthCard testId="health-telnyx" ok={health.telnyx_can_call} label="Telnyx Voice + SMS" detail={health.telnyx_can_call ? `From ${health.telnyx_phone}` : health.telnyx_configured ? "Key set - need TELNYX_PHONE_NUMBER" : "Not configured"}/>
+                <HealthCard testId="health-twilio" ok={health.twilio_can_call} label="Twilio (fallback)" detail={health.twilio_can_call ? `From ${health.twilio_from}` : health.twilio_configured ? "Need TWILIO_PHONE_NUMBER" : "Not configured"}/>
+                <HealthCard testId="health-google" ok={health.google_oauth} label="Google Calendar OAuth" detail={health.google_oauth ? "OAuth ready" : "Set GOOGLE_CLIENT_ID / SECRET"}/>
                 <HealthCard testId="health-fal" ok={health.fal_configured} label="Fal.ai Lip-Sync" detail={health.fal_configured ? "Key set (verify balance)" : "Missing FAL_KEY"}/>
                 <HealthCard testId="health-storage" ok={health.object_storage} label="Emergent Object Storage" detail={health.object_storage ? "Initialized" : "Init failed"}/>
-                <HealthCard testId="health-escalate" ok={!!health.escalation_target} label="Escalation Target" detail={health.escalation_target || "Not set"}/>
               </div>
             </div>
 
@@ -279,14 +284,37 @@ export default function Admin() {
 
       {/* FILES MODAL */}
       <Dialog open={!!filesModal} onOpenChange={(v) => !v && setFilesModal(null)}>
-        <DialogContent className="bg-[#1A202C] border-white/10 text-white">
+        <DialogContent className="bg-[#1A202C] border-white/10 text-white max-w-lg">
           <DialogHeader><DialogTitle>Files &mdash; {filesModal?.user?.email}</DialogTitle></DialogHeader>
+          <label className="border-2 border-dashed border-white/10 hover:border-[#48BB78]/50 rounded-md p-4 flex items-center justify-center cursor-pointer transition-colors bg-[#2D3748]/50 mb-3" data-testid="admin-files-upload-zone">
+            <input data-testid="admin-files-upload-input" type="file" accept=".pdf" className="hidden" onChange={async (e) => {
+              const file = e.target.files?.[0]; if (!file || !filesModal) return;
+              const fd = new FormData(); fd.append("file", file);
+              try {
+                await fetch(`${process.env.REACT_APP_BACKEND_URL}/api/admin/users/${filesModal.user.id}/files/upload`, {
+                  method: "POST", headers: { Authorization: `Bearer ${localStorage.getItem("rk_token")}` }, body: fd,
+                });
+                const { data } = await api.get(`/admin/users/${filesModal.user.id}/files`);
+                setFilesModal({ ...filesModal, files: data });
+                toast.success("File uploaded for tenant");
+              } catch { toast.error("Upload failed"); }
+            }}/>
+            <span className="text-sm text-[#A0AEC0] inline-flex items-center gap-2"><Upload size={14} className="text-[#48BB78]"/> Upload PDF on behalf of tenant</span>
+          </label>
           {filesModal?.files?.length ? (
-            <ul className="space-y-2">
+            <ul className="space-y-2 max-h-64 overflow-y-auto">
               {filesModal.files.map(f => (
-                <li key={f.id} className="bg-[#2D3748] px-3 py-2 rounded-md border border-white/5 text-sm flex justify-between">
+                <li key={f.id} className="bg-[#2D3748] px-3 py-2 rounded-md border border-white/5 text-sm flex justify-between items-center">
                   <span className="inline-flex items-center gap-2"><FileText size={14} className="text-[#48BB78]"/>{f.original_filename}</span>
-                  <span className="text-[#A0AEC0] text-xs">{(f.size/1024).toFixed(1)} KB</span>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[#A0AEC0] text-xs">{(f.size/1024).toFixed(1)} KB</span>
+                    <button data-testid={`admin-file-delete-${f.id}`} onClick={async () => {
+                      await api.delete(`/admin/files/${f.id}`);
+                      const { data } = await api.get(`/admin/users/${filesModal.user.id}/files`);
+                      setFilesModal({ ...filesModal, files: data });
+                      toast.success("File deleted");
+                    }} className="text-red-400 hover:text-red-300 text-xs font-bold">Delete</button>
+                  </div>
                 </li>
               ))}
             </ul>

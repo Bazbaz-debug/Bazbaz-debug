@@ -8,6 +8,7 @@ import Register from "@/pages/Register";
 import ForgotPassword from "@/pages/ForgotPassword";
 import Dashboard from "@/pages/Dashboard";
 import Admin from "@/pages/Admin";
+import SetupGuides from "@/pages/SetupGuides";
 import "@/App.css";
 
 function Protected({ children, admin }) {
@@ -29,6 +30,7 @@ function App() {
           <Route path="/forgot-password" element={<ForgotPassword />} />
           <Route path="/dashboard" element={<Protected><Dashboard /></Protected>} />
           <Route path="/admin" element={<Protected admin><Admin /></Protected>} />
+          <Route path="/setup" element={<Protected><SetupGuides /></Protected>} />
         </Routes>
       </BrowserRouter>
       <Toaster theme="dark" position="top-right" />

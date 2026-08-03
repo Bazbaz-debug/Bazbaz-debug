@@ -1,12 +1,13 @@
 import { useEffect, useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
-import { Upload, LogOut, Sparkles, CalendarDays, Palette, Book, TrendingUp, Bot, Link2, FileText, Shield, Copy, Check, Maximize2 } from "lucide-react";
+import { Upload, LogOut, Sparkles, CalendarDays, Palette, Book, TrendingUp, Bot, Link2, FileText, Shield, Copy, Check, Maximize2, Code2, CalendarClock, Layers } from "lucide-react";
 import api, { API } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import Widget from "@/components/Widget";
 import MetricsBar from "@/components/MetricsBar";
 import MouseGradient from "@/components/MouseGradient";
+import ParticleCanvas from "@/components/ParticleCanvas";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -116,11 +117,13 @@ export default function Dashboard() {
 
         <MetricsBar />
 
-        <div className="mb-6">
+        <div className="mb-6 flex flex-wrap gap-2">
           <Button data-testid="open-preview-btn" onClick={() => setPreviewOpen(true)} className="bg-[#48BB78] hover:bg-[#38A169] text-[#1A202C] hover:text-white font-bold rounded-md neon-glow-hover">
             <Maximize2 size={14} className="mr-2"/> Open Live Preview
           </Button>
-          <span className="ml-3 text-xs text-[#A0AEC0]">Test chatbot, avatar, knowledge base & booking in a full-screen sandbox before publishing.</span>
+          <Button data-testid="open-setup-btn" onClick={() => nav("/setup")} variant="outline" className="border-white/10 bg-transparent text-white hover:bg-white/5">
+            <Code2 size={14} className="mr-2"/> Install Guides
+          </Button>
         </div>
 
         <Tabs defaultValue="knowledge" className="w-full">
@@ -187,6 +190,7 @@ export default function Dashboard() {
           <TabsContent value="branding" className="space-y-6">
             <p className="text-[#A0AEC0] text-sm">Live preview updates in the sandbox on the right &rarr;</p>
             <AvatarGenderPicker current={user.avatar_gender || "female"} onChange={v => updateField("avatar_gender", v)}/>
+            <AvatarBackgroundPicker current={user.avatar_background || "studio_dark"} onChange={v => updateField("avatar_background", v)}/>
             <ColorPicker testId="color-widget-bg" label="Widget background" value={colors.widget_bg} onChange={v => updateField("widget_bg", v)}/>
             <ColorPicker testId="color-bubble" label="Bubble color" value={colors.bubble_color} onChange={v => updateField("bubble_color", v)}/>
             <ColorPicker testId="color-accent" label="Button / accent color" value={colors.accent_color} onChange={v => updateField("accent_color", v)}/>
@@ -195,6 +199,7 @@ export default function Dashboard() {
 
           {/* TAB 3: MATRIX */}
           <TabsContent value="matrix" className="space-y-6">
+            <GoogleCalendarCard/>
             <div className="bg-[#2D3748] rounded-md p-5 border border-white/5">
               <div className="flex items-center justify-between mb-3">
                 <div>
@@ -222,7 +227,8 @@ export default function Dashboard() {
 
       {/* RIGHT PANE - SANDBOX */}
       <div className="hidden lg:flex flex-1 h-screen sticky top-0 bg-[#0D1117] items-center justify-center relative dot-grid noise overflow-hidden">
-        <MouseGradient color="#48BB78" intensity={0.12} />
+        <MouseGradient color={colors.accent_color} intensity={0.12} />
+        <ParticleCanvas color={colors.accent_color} density={45}/>
         <div className="absolute top-6 left-6 flex items-center gap-2 z-10">
           <span className="w-2 h-2 rounded-full pulse-dot" style={{ background: colors.accent_color }}></span>
           <span className="uppercase text-xs tracking-[0.3em] font-bold text-[#48BB78]">Interactive Sandbox</span>
@@ -307,13 +313,78 @@ function AvatarGenderPicker({ current, onChange }) {
             onClick={() => onChange(key)}
             className={`rounded-md border-2 overflow-hidden text-left transition-colors ${current === key ? "border-[#48BB78] ring-2 ring-[#48BB78] ring-offset-2 ring-offset-[#1A202C]" : "border-white/10 hover:border-white/30"}`}
           >
-            <img src={p.image} alt={p.label} className="w-full h-24 object-cover"/>
+            <img src={p.image} alt={p.label} className="w-full h-24 object-cover bg-[#2D3748]"/>
             <div className="p-2 bg-[#2D3748]">
               <p className="text-white font-bold text-sm">{p.label}</p>
               <p className="text-xs text-[#48BB78]">voice: {p.voice}</p>
             </div>
           </button>
         ))}
+      </div>
+    </div>
+  );
+}
+
+const BACKGROUNDS = [
+  { key: "studio_dark", label: "Studio Dark", bg: "linear-gradient(135deg,#1A202C 0%,#2D3748 100%)" },
+  { key: "office", label: "Office", bg: "linear-gradient(135deg,#4A5568 0%,#2D3748 100%)" },
+  { key: "clean_gradient", label: "Clean Gradient", bg: "linear-gradient(135deg,#48BB78 0%,#4299E1 100%)" },
+];
+function AvatarBackgroundPicker({ current, onChange }) {
+  return (
+    <div>
+      <Label className="text-[#A0AEC0]">Avatar background scene</Label>
+      <p className="text-xs text-[#A0AEC0] mb-2">Backdrop behind the AI persona in the live widget.</p>
+      <div className="grid grid-cols-3 gap-3" data-testid="avatar-bg-grid">
+        {BACKGROUNDS.map(b => (
+          <button key={b.key} data-testid={`avatar-bg-${b.key}`} onClick={() => onChange(b.key)}
+            className={`rounded-md border-2 overflow-hidden text-left transition-colors h-24 flex items-end p-2 ${current === b.key ? "border-[#48BB78] ring-2 ring-[#48BB78] ring-offset-2 ring-offset-[#1A202C]" : "border-white/10 hover:border-white/30"}`}
+            style={{ background: b.bg }}>
+            <span className="bg-black/50 px-2 py-0.5 rounded text-xs text-white font-bold">{b.label}</span>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function GoogleCalendarCard() {
+  const [status, setStatus] = useState({ connected: false });
+  const [busy, setBusy] = useState(false);
+  useEffect(() => { api.get("/google/status").then(r => setStatus(r.data)).catch(() => {}); }, []);
+  const connect = async () => {
+    setBusy(true);
+    try {
+      const { data } = await api.get("/google/oauth/start");
+      window.open(data.auth_url, "_blank", "noopener,noreferrer,width=520,height=680");
+      toast.success("Complete the Google consent flow in the new tab");
+      // Poll status
+      const iv = setInterval(async () => {
+        const s = await api.get("/google/status");
+        if (s.data.connected) { clearInterval(iv); setStatus(s.data); setBusy(false); toast.success("Google Calendar connected"); }
+      }, 3000);
+      setTimeout(() => { clearInterval(iv); setBusy(false); }, 120000);
+    } catch (e) {
+      toast.error(e?.response?.data?.detail || "Google OAuth not configured");
+      setBusy(false);
+    }
+  };
+  const disconnect = async () => { await api.post("/google/oauth/disconnect"); setStatus({ connected: false }); toast.success("Disconnected"); };
+  return (
+    <div className="bg-[#2D3748] rounded-md p-5 border border-white/5" data-testid="gcal-card">
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-md bg-[#48BB78]/10 border border-[#48BB78]/30 text-[#48BB78] flex items-center justify-center"><CalendarClock size={18}/></div>
+          <div>
+            <h3 className="font-display font-bold text-lg">Google Calendar</h3>
+            <p className="text-xs text-[#A0AEC0]">{status.connected ? `Connected ${status.connected_at ? "· " + new Date(status.connected_at).toLocaleDateString() : ""}` : "Bookings sync directly to your calendar when connected."}</p>
+          </div>
+        </div>
+        {status.connected ? (
+          <Button data-testid="gcal-disconnect-btn" onClick={disconnect} size="sm" variant="outline" className="border-red-500/40 bg-transparent text-red-400 hover:bg-red-500/10">Disconnect</Button>
+        ) : (
+          <Button data-testid="gcal-connect-btn" onClick={connect} disabled={busy} size="sm" className="bg-[#48BB78] hover:bg-[#38A169] text-[#1A202C] hover:text-white font-bold">{busy ? "Waiting..." : "Connect"}</Button>
+        )}
       </div>
     </div>
   );
