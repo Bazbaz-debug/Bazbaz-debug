@@ -11,6 +11,10 @@ from pathlib import Path
 import os, uuid, logging, asyncio, jwt, bcrypt, requests, resend, json, secrets, string
 
 from emergentintegrations.llm.chat import LlmChat, UserMessage, TextDelta, StreamDone
+from emergentintegrations.llm.openai import OpenAISpeechToText, OpenAITextToSpeech
+from pypdf import PdfReader
+from io import BytesIO
+from twilio.rest import Client as TwilioClient
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -27,6 +31,11 @@ ADMIN_EMAIL = os.environ['ADMIN_EMAIL']
 ADMIN_PASSWORD = os.environ['ADMIN_PASSWORD']
 APP_NAME = "rozio-killer"
 STORAGE_URL = "https://integrations.emergentagent.com/objstore/api/v1/storage"
+TWILIO_SID = os.environ.get("TWILIO_ACCOUNT_SID", "")
+TWILIO_TOKEN = os.environ.get("TWILIO_AUTH_TOKEN", "")
+TWILIO_FROM = os.environ.get("TWILIO_PHONE_NUMBER", "")
+ESCALATION_TARGET = os.environ.get("ESCALATION_TARGET_PHONE", "")
+FAL_KEY = os.environ.get("FAL_KEY", "")
 
 resend.api_key = RESEND_API_KEY
 
@@ -298,17 +307,28 @@ async def upload_pdf(file: UploadFile = File(...), user=Depends(get_current_user
     path = f"{APP_NAME}/uploads/{user['id']}/{uuid.uuid4()}.{ext}"
     data = await file.read()
     result = put_object(path, data, "application/pdf")
+    # Extract text for RAG
+    text = ""
+    try:
+        reader = PdfReader(BytesIO(data))
+        for page in reader.pages[:30]:  # first 30 pages
+            text += (page.extract_text() or "") + "\n"
+        text = text[:30000]  # cap for prompt safety
+    except Exception as e:
+        logger.warning(f"PDF extract failed: {e}")
     rec = {
         "id": str(uuid.uuid4()),
         "user_id": user["id"],
         "storage_path": result["path"],
         "original_filename": file.filename,
         "size": result["size"],
+        "content": text,
         "is_deleted": False,
         "created_at": now_iso(),
     }
     await db.files.insert_one(rec.copy())
-    return rec
+    # Response without heavy content
+    return {k: v for k, v in rec.items() if k != "content"}
 
 @api_router.get("/knowledge/files")
 async def list_files(user=Depends(get_current_user)):
@@ -351,6 +371,16 @@ async def chat_stream(req: ChatReq):
         system += f" Delivery windows: {json.dumps(delivery)}. When asked about location or delivery, use these times. "
     system += " If asked to book an appointment, tell them to click a calendar slot."
 
+    # RAG: inject PDF knowledge context
+    if tenant_id:
+        pdf_files = await db.files.find({"user_id": tenant_id, "is_deleted": False}, {"_id": 0, "content": 1, "original_filename": 1}).to_list(5)
+        pdf_chunks = []
+        for f in pdf_files:
+            if f.get("content"):
+                pdf_chunks.append(f"[Source: {f.get('original_filename', 'pdf')}]\n{f['content'][:6000]}")
+        if pdf_chunks:
+            system += "\n\n=== INTERNAL KNOWLEDGE BASE (cite when relevant) ===\n" + "\n\n---\n\n".join(pdf_chunks)
+
     chat = LlmChat(api_key=EMERGENT_LLM_KEY, session_id=req.session_id, system_message=system).with_model("openai", "gpt-5.6-terra")
 
     async def gen():
@@ -383,7 +413,24 @@ async def escalate(req: EscalateReq):
     </div>
     """
     await send_email(tenant["email"], "Live Human Escalation - Chat Transcript", html)
-    return {"ok": True, "status": "Routing to Live Line...", "phone": "+1-555-ROZIO-AI"}
+    # Twilio real call if credentials + FROM number configured
+    call_status = "mocked"
+    call_sid = None
+    if TWILIO_SID and TWILIO_TOKEN and TWILIO_FROM and ESCALATION_TARGET:
+        try:
+            twilio_client = TwilioClient(TWILIO_SID, TWILIO_TOKEN)
+            call = twilio_client.calls.create(
+                to=ESCALATION_TARGET,
+                from_=TWILIO_FROM,
+                twiml=f"<Response><Say voice='Polly.Joanna'>Live human escalation from Rozio Killer. A customer on {tenant.get('target_domain', 'your site')} is waiting. Transcript sent to your inbox.</Say></Response>",
+            )
+            call_sid = call.sid
+            call_status = "live_call_placed"
+        except Exception as e:
+            logger.error(f"Twilio call failed: {e}")
+            call_status = f"failed: {str(e)[:80]}"
+    await db.calls.insert_one({"id": str(uuid.uuid4()), "tenant_id": req.tenant_id, "target": ESCALATION_TARGET, "status": call_status, "sid": call_sid, "created_at": now_iso()})
+    return {"ok": True, "status": "Routing to Live Line...", "phone": ESCALATION_TARGET or "+1-555-ROZIO-AI", "call_status": call_status, "call_sid": call_sid}
 
 @api_router.post("/booking/confirm")
 async def booking_confirm(req: BookingReq):
@@ -471,6 +518,73 @@ async def admin_update_instruction(user_id: str, req: AdminUpdateInstructionReq,
 async def admin_user_files(user_id: str, admin=Depends(require_admin)):
     files = await db.files.find({"user_id": user_id, "is_deleted": False}, {"_id": 0}).to_list(200)
     return files
+
+# ============= VOICE (Whisper STT + OpenAI TTS) =============
+@api_router.post("/voice/stt")
+async def voice_stt(file: UploadFile = File(...)):
+    stt = OpenAISpeechToText(api_key=EMERGENT_LLM_KEY)
+    # Save temp then pass file handle
+    data = await file.read()
+    tmp = Path(f"/tmp/{uuid.uuid4()}_{file.filename or 'audio.webm'}")
+    tmp.write_bytes(data)
+    try:
+        with open(tmp, "rb") as f:
+            resp = await stt.transcribe(file=f, model="whisper-1", response_format="json")
+        text = getattr(resp, "text", None) or (resp.get("text") if isinstance(resp, dict) else str(resp))
+        return {"text": text}
+    except Exception as e:
+        logger.error(f"STT failed: {e}")
+        raise HTTPException(500, f"Transcription failed: {e}")
+    finally:
+        try: tmp.unlink()
+        except Exception: pass
+
+class TTSReq(BaseModel):
+    text: str
+    voice: str = "nova"
+
+@api_router.post("/voice/tts")
+async def voice_tts(req: TTSReq):
+    tts = OpenAITextToSpeech(api_key=EMERGENT_LLM_KEY)
+    try:
+        b64 = await tts.generate_speech_base64(text=req.text[:2000], voice=req.voice, model="tts-1", response_format="mp3")
+        return {"audio_base64": b64, "mime": "audio/mpeg"}
+    except Exception as e:
+        logger.error(f"TTS failed: {e}")
+        raise HTTPException(500, f"TTS failed: {e}")
+
+# ============= EMBED LOADER SCRIPT =============
+@api_router.get("/embed/{tenant_id}/loader.js")
+async def embed_loader(tenant_id: str):
+    tenant = await db.users.find_one({"id": tenant_id, "active": True}, {"_id": 0})
+    if not tenant:
+        return Response(content="console.warn('[Rozio-Killer] widget disabled - account inactive or missing');", media_type="application/javascript")
+    frontend_url = os.environ.get("FRONTEND_URL", "").rstrip("/") or "https://saas-ai-platform-5.preview.emergentagent.com"
+    bg = tenant.get("widget_bg", "#1A202C")
+    bubble = tenant.get("bubble_color", "#48BB78")
+    accent = tenant.get("accent_color", "#48BB78")
+    js = f"""
+(function(){{
+  if(window.__RozioKillerLoaded) return; window.__RozioKillerLoaded=true;
+  var TENANT="{tenant_id}", API="{frontend_url}/api";
+  var BG="{bg}", BUBBLE="{bubble}", ACCENT="{accent}";
+  var launcher=document.createElement('button');
+  launcher.setAttribute('data-testid','rk-embed-launcher');
+  launcher.style.cssText="position:fixed;bottom:24px;right:24px;width:56px;height:56px;border-radius:50%;background:"+ACCENT+";color:"+BG+";border:none;box-shadow:0 8px 32px rgba(0,0,0,.35);cursor:pointer;font-family:sans-serif;font-weight:800;font-size:22px;z-index:2147483647";
+  launcher.innerHTML='&#9679;';
+  var frame=null;
+  launcher.onclick=function(){{
+    if(frame){{frame.remove();frame=null;launcher.innerHTML='&#9679;';return;}}
+    frame=document.createElement('iframe');
+    frame.src=API.replace('/api','')+'/embed-widget?tenant='+TENANT;
+    frame.style.cssText="position:fixed;bottom:96px;right:24px;width:380px;height:600px;border:none;border-radius:16px;box-shadow:0 20px 60px rgba(0,0,0,.5);z-index:2147483647;background:"+BG;
+    document.body.appendChild(frame);
+    launcher.innerHTML='&times;';
+  }};
+  document.body.appendChild(launcher);
+}})();
+"""
+    return Response(content=js, media_type="application/javascript")
 
 app.include_router(api_router)
 

@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
-import { Upload, LogOut, Sparkles, CalendarDays, Palette, Book, TrendingUp, Bot, Link2, FileText, Shield } from "lucide-react";
+import { Upload, LogOut, Sparkles, CalendarDays, Palette, Book, TrendingUp, Bot, Link2, FileText, Shield, Copy, Check } from "lucide-react";
 import api, { API } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import Widget from "@/components/Widget";
@@ -176,6 +176,7 @@ export default function Dashboard() {
             <ColorPicker testId="color-widget-bg" label="Widget background" value={colors.widget_bg} onChange={v => updateField("widget_bg", v)}/>
             <ColorPicker testId="color-bubble" label="Bubble color" value={colors.bubble_color} onChange={v => updateField("bubble_color", v)}/>
             <ColorPicker testId="color-accent" label="Button / accent color" value={colors.accent_color} onChange={v => updateField("accent_color", v)}/>
+            <EmbedScript userId={user.id}/>
           </TabsContent>
 
           {/* TAB 3: MATRIX */}
@@ -243,6 +244,31 @@ function ColorPicker({ label, value, onChange, testId }) {
           ))}
         </div>
       </div>
+    </div>
+  );
+}
+
+function EmbedScript({ userId }) {
+  const [copied, setCopied] = useState(false);
+  const backend = process.env.REACT_APP_BACKEND_URL;
+  const snippet = `<script async src="${backend}/api/embed/${userId}/loader.js"></script>`;
+  const copy = () => {
+    navigator.clipboard.writeText(snippet);
+    setCopied(true);
+    toast.success("Embed script copied");
+    setTimeout(() => setCopied(false), 2000);
+  };
+  return (
+    <div className="bg-[#2D3748] rounded-md border border-[#48BB78]/30 p-5 mt-2">
+      <div className="flex items-center gap-2 mb-2">
+        <Sparkles size={14} className="text-[#48BB78]"/>
+        <p className="uppercase text-xs tracking-[0.3em] font-bold text-[#48BB78]">Deploy &middot; One-line embed</p>
+      </div>
+      <p className="text-sm text-[#A0AEC0] mb-3">Paste this into your Shopify theme, WordPress header, or any HTML page. Colors sync live from above.</p>
+      <div className="bg-[#1A202C] border border-white/10 rounded-md p-3 font-mono text-xs text-[#48BB78] break-all" data-testid="embed-snippet">{snippet}</div>
+      <button data-testid="embed-copy-btn" onClick={copy} className="mt-3 inline-flex items-center gap-1.5 text-xs font-bold px-3 py-2 rounded-md bg-[#48BB78] hover:bg-[#38A169] text-[#1A202C] hover:text-white">
+        {copied ? <Check size={12}/> : <Copy size={12}/>} {copied ? "Copied" : "Copy snippet"}
+      </button>
     </div>
   );
 }
