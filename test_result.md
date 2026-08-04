@@ -328,8 +328,15 @@ agent_communication:
       send) — those require phone numbers / Resend key that aren't set.
   - agent: "testing"
     message: |
-      ✅ BACKEND TESTING COMPLETE - ALL TESTS PASSED (8/8)
-      Both backend tasks verified and working correctly.
+      ✅ NEW BACKEND ENDPOINTS VERIFIED (all 3 pass):
+      A. /api/public/tenant/{id} — safe fields returned, no sensitive leakage, 404 on missing.
+      B. /api/preview/proxy?url= — base tag + banner injected, no x-frame-options/CSP,
+         400 on non-http(s), 200 fallback HTML on unreachable domain.
+      C. /api/embed/{id}/loader.js — application/javascript, contains /embed-widget?tenant=,
+         rk:close postMessage hook, and IS_MOBILE detection.
+      Main-agent verified visually: Shopify-style embed launcher + iframe widget open
+      correctly on a 3rd-party page, and the Live Sandbox modal loads real URLs
+      (direct + via proxy) with the widget overlaid.
   - agent: "main"
     message: |
       New backend endpoints to verify (for the Shopify embed + Live Sandbox fix):

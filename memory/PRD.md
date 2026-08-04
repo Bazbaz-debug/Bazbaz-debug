@@ -1,5 +1,26 @@
 # Rozio-Killer SaaS — Product Requirements
 
+## Implemented (2026-08-04) — Shopify Embed Fix + Bot UI Upgrade + Live Sandbox
+- **Fixed Shopify embed**: The `/embed-widget?tenant=<id>` iframe route now exists
+  (previously the loader pointed at a non-existent route → blank iframe). New
+  `frontend/src/pages/EmbedWidget.jsx` loads tenant config via the new
+  `GET /api/public/tenant/{id}` public endpoint (no auth, safe fields only) and
+  renders the Widget full-frame with parent-window close via postMessage.
+- **Top-tier chatbot look**: Widget.jsx upgraded with a gradient header + ambient
+  glow, hero "Hi there! 👋" greeting, sparkle AI avatar next to bot messages,
+  glass-morphism bubbles, Intercom Fin-style suggested action cards with hover
+  arrows, and premium input row. Embedded mode fills iframe (mobile + desktop).
+- **Premium loader.js**: Chat-SVG launcher with gradient/pulse animation, teaser
+  bubble ("👋 Hi! I can help — ask me anything") that appears 1.8s after page
+  load and auto-dismisses. Iframe is 400×640 desktop / full-screen mobile with
+  microphone/autoplay/clipboard-write permissions.
+- **Live Sandbox with real URLs**: New LivePreviewSandbox in Dashboard replaces
+  the fake wireframe. URL input + Chrome-style dots → iframes any site with the
+  widget overlaid. New `GET /api/preview/proxy?url=` server-side proxy handles
+  sites that block iframing (X-Frame-Options / CSP): fetches HTML via httpx,
+  injects `<base href>` so relative assets resolve, prepends a "Live Sandbox"
+  banner, strips CSP meta, returns without frame-blocking headers.
+
 ## Original Problem Statement
 Build a responsive full-stack multi-tenant SaaS app that outperforms Rozio AI. Cross-platform support (Shopify, WordPress, Custom HTML). Dark charcoal #1A202C + neon green #48BB78 theme. Includes: public landing with invite-only toggle, secure login + forgot password, tabbed client dashboard (Knowledge Ingestion / Widget Branding / Operational Matrix), permanent split-screen sandbox with live AI-avatar chat widget, and super-user admin panel at /admin.
 
