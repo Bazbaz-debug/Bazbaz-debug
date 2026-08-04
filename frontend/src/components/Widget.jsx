@@ -61,6 +61,66 @@ export default function Widget({ tenant, colors, catalog }) {
   const recognitionRef = useRef(null);
   const sessionId = useRef(`sess-${Date.now()}`).current;
   const callActiveRef = useRef(false);
+  const audioCtxRef = useRef(null);
+  const analyserRef = useRef(null);
+  const rafRef = useRef(null);
+
+  const stopMouthAnalyser = useCallback(() => {
+    if (rafRef.current) { cancelAnimationFrame(rafRef.current); rafRef.current = null; }
+    analyserRef.current = null;
+    document.querySelectorAll("[data-mouth]").forEach(el => {
+      el.style.transform = "";
+      el.style.opacity = "";
+    });
+    document.querySelectorAll("[data-face]").forEach(el => {
+      const base = el.dataset.baseScale || "1.7";
+      el.style.transform = `scale(${base})`;
+      el.style.filter = "";
+    });
+  }, []);
+
+  const startMouthAnalyser = useCallback((audioEl) => {
+    try {
+      if (!audioCtxRef.current) {
+        const AC = window.AudioContext || window.webkitAudioContext;
+        if (!AC) return;
+        audioCtxRef.current = new AC();
+      }
+      const ctx = audioCtxRef.current;
+      if (ctx.state === "suspended") ctx.resume();
+      const src = ctx.createMediaElementSource(audioEl);
+      const analyser = ctx.createAnalyser();
+      analyser.fftSize = 256;
+      analyser.smoothingTimeConstant = 0.55;
+      src.connect(analyser);
+      analyser.connect(ctx.destination);
+      analyserRef.current = analyser;
+      const data = new Uint8Array(analyser.frequencyBinCount);
+      const loop = () => {
+        if (!analyserRef.current) return;
+        analyser.getByteFrequencyData(data);
+        // Focus on voice band (roughly 200 Hz - 3.5 kHz)
+        let sum = 0, count = 0;
+        for (let i = 2; i < 40; i++) { sum += data[i]; count++; }
+        const avg = (sum / count) / 255;
+        const level = Math.min(1, avg * 2.4);
+        // Mouth-shaped overlay: opens vertically with amplitude
+        document.querySelectorAll("[data-mouth]").forEach(el => {
+          el.style.transform = `translateX(-50%) scaleY(${0.25 + level * 2.2}) scaleX(${1 + level * 0.22})`;
+          el.style.opacity = String(0.55 + level * 0.4);
+        });
+        // Face itself: subtle audio-reactive scale + brightness so the whole head appears to react to speech
+        document.querySelectorAll("[data-face]").forEach(el => {
+          const base = el.dataset.baseScale || "1.7";
+          const s = parseFloat(base) + level * 0.03;
+          el.style.transform = `scale(${s}) translateY(${-level * 3}px)`;
+          el.style.filter = `brightness(${1 + level * 0.08})`;
+        });
+        rafRef.current = requestAnimationFrame(loop);
+      };
+      loop();
+    } catch (e) { /* MediaElementSource may already exist for this element */ }
+  }, []);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
@@ -86,13 +146,14 @@ export default function Widget({ tenant, colors, catalog }) {
         audioRef.current = audio;
         setSpeaking(true);
         return new Promise((resolve) => {
-          audio.onended = () => { setSpeaking(false); audioRef.current = null; resolve(); };
-          audio.onerror = () => { setSpeaking(false); audioRef.current = null; resolve(); };
-          audio.play().catch(() => { setSpeaking(false); audioRef.current = null; resolve(); });
+          audio.onended = () => { setSpeaking(false); audioRef.current = null; stopMouthAnalyser(); resolve(); };
+          audio.onerror = () => { setSpeaking(false); audioRef.current = null; stopMouthAnalyser(); resolve(); };
+          audio.onplay = () => { startMouthAnalyser(audio); };
+          audio.play().catch(() => { setSpeaking(false); audioRef.current = null; stopMouthAnalyser(); resolve(); });
         });
       }
     } catch { setSpeaking(false); }
-  }, [voiceMode, tenant]);
+  }, [voiceMode, tenant, startMouthAnalyser, stopMouthAnalyser]);
 
   const escalate = useCallback(async () => {
     if (!tenant?.id) return;
@@ -288,11 +349,11 @@ export default function Widget({ tenant, colors, catalog }) {
           {/* soft accent halo behind face */}
           <div className="absolute pointer-events-none" style={{ width: "42rem", height: "42rem", borderRadius: "9999px", background: `radial-gradient(circle, ${accent}22 0%, transparent 65%)`, filter: "blur(40px)" }}></div>
           <div className={`relative w-72 h-72 rounded-full overflow-hidden mb-8 voice-halo ${callListening || speaking ? "face-speaking" : "face-alive"}`} style={{ border: `4px solid ${accent}`, boxShadow: `0 0 80px ${accent}55, 0 0 160px ${accent}22` }}>
-            <img src={avatarUrl(gender)} alt="AI" className="w-full h-full object-cover"/>
-            {/* Mouth animation overlay while speaking */}
+            <img src={avatarUrl(gender)} alt="AI" className="w-full h-full object-cover" data-face data-base-scale="1.7" style={{ objectPosition: "center 18%", transform: "scale(1.7)", transition: "transform 60ms linear, filter 60ms linear" }}/>
+            {/* Audio-reactive mouth overlay while speaking */}
             {speaking && (
-              <div className="absolute left-1/2 -translate-x-1/2 pointer-events-none" style={{ bottom: "22%", width: "56px", height: "18px" }}>
-                <div className="w-full h-full rounded-full mouth-talk" style={{ background: "rgba(30,20,20,0.6)", boxShadow: `inset 0 -6px 8px rgba(0,0,0,0.5), 0 0 12px ${accent}55` }}></div>
+              <div className="absolute pointer-events-none" style={{ left: "50%", bottom: "45%", width: "42px", height: "9px", transform: "translateX(-50%)" }}>
+                <div data-mouth className="w-full h-full rounded-[50%]" style={{ background: "radial-gradient(ellipse at center, rgba(20,4,8,0.85) 0%, rgba(6,1,2,0.95) 90%)", boxShadow: `inset 0 -2px 4px rgba(0,0,0,0.9), inset 0 2px 3px rgba(160,50,60,0.4)`, transformOrigin: "center center", transition: "transform 55ms linear, opacity 55ms linear", mixBlendMode: "multiply" }}></div>
               </div>
             )}
           </div>
@@ -312,12 +373,14 @@ export default function Widget({ tenant, colors, catalog }) {
             onEnded={() => setSpeaking(false)} onError={() => { setVideoUrl(null); setSpeaking(false); }}
             className="w-full h-40 object-cover" data-testid="widget-avatar-video"/>
         ) : (
-          <img src={avatarUrl(gender)} alt="AI avatar" className={`w-full h-40 object-cover bg-[#2D3748] ${speaking || callListening ? "face-speaking" : "face-alive"}`} data-testid="widget-avatar-image"/>
+          <div className={`w-full h-40 overflow-hidden bg-[#2D3748] ${speaking || callListening ? "face-speaking" : "face-alive"}`}>
+            <img src={avatarUrl(gender)} alt="AI avatar" className="w-full h-full object-cover" data-face data-base-scale="1.65" style={{ objectPosition: "center 18%", transform: "scale(1.65)", transition: "transform 60ms linear, filter 60ms linear" }} data-testid="widget-avatar-image"/>
+          </div>
         )}
-        {/* Mouth animation on inline avatar too */}
+        {/* Audio-reactive mouth on inline avatar */}
         {speaking && !videoUrl && (
-          <div className="absolute left-1/2 -translate-x-1/2 pointer-events-none" style={{ bottom: "18px", width: "38px", height: "12px" }}>
-            <div className="w-full h-full rounded-full mouth-talk" style={{ background: "rgba(30,20,20,0.55)", boxShadow: `inset 0 -4px 6px rgba(0,0,0,0.5), 0 0 8px ${accent}55` }}></div>
+          <div className="absolute pointer-events-none" style={{ left: "50%", bottom: "55%", width: "24px", height: "6px", transform: "translateX(-50%)", transformOrigin: "center center" }}>
+            <div data-mouth className="w-full h-full rounded-[50%]" style={{ background: "radial-gradient(ellipse at center, rgba(20,4,8,0.85) 0%, rgba(6,1,2,0.95) 90%)", boxShadow: `inset 0 -1px 2px rgba(0,0,0,0.85), inset 0 1px 1px rgba(160,50,60,0.4)`, transformOrigin: "center center", transition: "transform 55ms linear, opacity 55ms linear", mixBlendMode: "multiply" }}></div>
           </div>
         )}
         {generatingVideo && (

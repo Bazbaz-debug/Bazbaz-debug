@@ -17,6 +17,11 @@ Build a responsive full-stack multi-tenant SaaS app that outperforms Rozio AI. C
 - Storage: Emergent Object Storage via `EMERGENT_LLM_KEY`, init at startup.
 
 ## Implemented (2026-02-04)
+Phase 8b (2026-02-04) — Face-only avatar + real audio-reactive mouth:
+- **Face-only crop**: avatar image in both call overlay + inline widget is now zoomed (scale 1.65-1.7 with objectPosition centered on the face) so only the head/face is visible — shoulders and torso are cropped out
+- **Real audio-reactive mouth**: hooked WebAudio `AnalyserNode` into the OpenAI TTS `<audio>` element; a `requestAnimationFrame` loop reads voice-band amplitude and drives (a) a mouth-shaped overlay that opens/closes vertically in sync with the actual voice waveform and (b) a subtle scale + brightness pulse on the whole face for a lifelike "talking head" illusion
+- Cleaned up conflicting CSS keyframe transforms that were fighting the inline `scale()` on the face image
+
 Phase 8 (2026-02-04) — Voice UX polish:
 - **Fixed frontend parse error** in `Widget.jsx` (dead `{false && (` block was crashing the build)
 - **Single realistic voice everywhere**: Removed the browser `speechSynthesis` branch entirely. Both text-chat and hands-free voice-call modes now use OpenAI **`tts-1-hd`** with the tenant's matched persona voice (`nova`/`onyx`/`sage`). No more voice switching between messages or between languages — one consistent, natural voice.
