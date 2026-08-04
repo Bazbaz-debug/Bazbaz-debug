@@ -33,7 +33,7 @@ const FEATURED_REVIEW = {
   name: "CEO",
   company: "Fresh N Clean Services LLC",
   role: "CEO · Fresh N Clean Services LLC",
-  text: "I hired someone to build my website and all they gave me was a basic bot chat. Then Baazi came in and did a great job — the chat gives live updates in any language, and books Zoom meetings with clients on top of that. We're on step 3 and it keeps getting better.",
+  text: "I hired someone to build my website and all they gave me was a basic bot chat. Then Baazi came in and did a great job — the chat gives live updates in any language, and books Zoom meetings with clients on top of that.",
   stars: 5,
   featured: true,
 };
@@ -72,7 +72,7 @@ export default function Landing() {
         </div>
         <div className="flex items-center gap-3">
           <Link to="/login" data-testid="nav-login-link" className="text-sm text-white/70 hover:text-white transition-colors">Client Login</Link>
-          <Button data-testid="nav-book-btn" onClick={bookBaazi} className="bg-[#48BB78] hover:bg-[#38A169] text-[#0D1117] hover:text-white font-bold rounded-md">
+          <Button data-testid="nav-book-btn" onClick={bookBaazi} className="btn-luxe font-bold rounded-full px-5">
             <Briefcase size={14} className="mr-1.5"/> Book Baazi
           </Button>
         </div>

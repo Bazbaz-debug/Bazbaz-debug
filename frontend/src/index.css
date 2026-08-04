@@ -216,4 +216,70 @@ input[type="color"].hide-native::-webkit-color-swatch { border: 2px solid rgba(2
 
 /* Fade in section on view */
 @keyframes fade-up { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
+
+/* ================= LUXURY UPGRADES ================= */
+/* Shiny buttons: sweep of light across on hover */
+.btn-luxe {
+  position: relative;
+  overflow: hidden;
+  background: linear-gradient(135deg, #48BB78 0%, #38A169 50%, #48BB78 100%);
+  background-size: 200% 200%;
+  color: #0D1117;
+  transition: background-position 0.6s cubic-bezier(.2,.9,.3,1), transform 0.15s ease, box-shadow 0.3s ease;
+  box-shadow: 0 8px 24px -6px rgba(72,187,120,0.45), inset 0 1px 0 rgba(255,255,255,0.25);
+}
+.btn-luxe:hover {
+  background-position: 100% 0;
+  transform: translateY(-1px);
+  box-shadow: 0 14px 34px -6px rgba(72,187,120,0.55), inset 0 1px 0 rgba(255,255,255,0.35);
+}
+.btn-luxe::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(120deg, transparent 30%, rgba(255,255,255,0.35) 50%, transparent 70%);
+  transform: translateX(-120%) skewX(-20deg);
+  transition: transform 0.9s ease;
+  pointer-events: none;
+}
+.btn-luxe:hover::before { transform: translateX(120%) skewX(-20deg); }
+.btn-luxe:active { transform: translateY(0); }
+
+/* Ghost / outline luxe variant */
+.btn-luxe-ghost {
+  position: relative;
+  overflow: hidden;
+  background: rgba(255,255,255,0.03);
+  border: 1px solid rgba(255,255,255,0.14);
+  color: #fff;
+  transition: all 0.25s ease;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.07);
+}
+.btn-luxe-ghost:hover {
+  background: rgba(72,187,120,0.10);
+  border-color: rgba(72,187,120,0.45);
+  color: #fff;
+  transform: translateY(-1px);
+  box-shadow: 0 10px 26px -8px rgba(72,187,120,0.35);
+}
+
+/* Luxurious card */
+.card-luxe {
+  background: linear-gradient(180deg, rgba(255,255,255,0.02) 0%, rgba(255,255,255,0.005) 100%);
+  border: 1px solid rgba(255,255,255,0.06);
+  backdrop-filter: blur(8px);
+  box-shadow: 0 20px 60px -25px rgba(0,0,0,0.55), inset 0 1px 0 rgba(255,255,255,0.04);
+}
+
+/* Half-sheet slide-up */
+@keyframes sheet-in { from { transform: translateY(100%); } to { transform: translateY(0); } }
+.sheet-in { animation: sheet-in 0.35s cubic-bezier(.2,.9,.3,1) both; }
+
+/* Handle for drag / grab hint at top of half sheet */
+.sheet-handle {
+  width: 46px; height: 4px; border-radius: 999px;
+  background: rgba(255,255,255,0.18);
+  margin: 6px auto 0;
+}
+
 .fade-up { animation: fade-up 0.7s cubic-bezier(.2,.9,.3,1) both; }
