@@ -40,7 +40,7 @@ export default function Widget({ tenant, colors, catalog }) {
 
   const [open, setOpen] = useState(true);
   const [messages, setMessages] = useState([
-    { role: "assistant", text: "Hey — how can I help?" },
+    { role: "assistant", text: tenant?.bot_greeting || "Hey — how can I help?" },
   ]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
@@ -362,13 +362,20 @@ export default function Widget({ tenant, colors, catalog }) {
       )}
       {/* Chat mode: sleek header (no face) */}
       <div className="px-4 py-3 flex items-center gap-3 border-b border-white/5" style={{ background: "linear-gradient(180deg, rgba(255,255,255,0.03) 0%, transparent 100%)" }}>
-        <div className="relative w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0" style={{ background: `linear-gradient(135deg, ${accent}, ${accent}88)` }}>
-          <Sparkles size={16} className="text-[#0D1117]"/>
-          <span className="absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2" style={{ background: "#48BB78", borderColor: bg }}></span>
-        </div>
+        {tenant?.logo_url ? (
+          <div className="relative w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 overflow-hidden bg-white/5 border border-white/10" data-testid="widget-logo">
+            <img src={tenant.logo_url} alt="logo" className="w-full h-full object-contain"/>
+            <span className="absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2" style={{ background: "#48BB78", borderColor: bg }}></span>
+          </div>
+        ) : (
+          <div className="relative w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0" style={{ background: `linear-gradient(135deg, ${accent}, ${accent}88)` }}>
+            <Sparkles size={16} className="text-[#0D1117]"/>
+            <span className="absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2" style={{ background: "#48BB78", borderColor: bg }}></span>
+          </div>
+        )}
         <div className="flex-1 min-w-0">
-          <p className="text-white text-sm font-bold leading-tight truncate">{tenant?.full_name || "AI Concierge"}</p>
-          <p className="text-white/50 text-[11px] leading-tight">Online &middot; replies instantly</p>
+          <p className="text-white text-sm font-bold leading-tight truncate">{tenant?.bot_name || tenant?.full_name || "AI Concierge"}</p>
+          <p className="text-white/50 text-[11px] leading-tight truncate">{tenant?.bot_tagline || "Online · replies instantly"}</p>
         </div>
         <button data-testid="widget-startcall-btn" onClick={startCall} title="Start face-to-face voice call" className="w-9 h-9 rounded-full flex items-center justify-center transition-transform hover:scale-105" style={{ background: `${accent}18`, color: accent, border: `1px solid ${accent}44` }}>
           <PhoneCall size={15}/>

@@ -199,6 +199,126 @@ async def send_sms(to: str, body: str):
 async def send_email(to: str, subject: str, html: str):
     return await asyncio.to_thread(send_email_sync, to, subject, html)
 
+# ============= BOOKING AVAILABILITY HELPERS =============
+DEFAULT_BUSINESS_HOURS = {
+    "mon": {"start": "09:00", "end": "17:00", "enabled": True},
+    "tue": {"start": "09:00", "end": "17:00", "enabled": True},
+    "wed": {"start": "09:00", "end": "17:00", "enabled": True},
+    "thu": {"start": "09:00", "end": "17:00", "enabled": True},
+    "fri": {"start": "09:00", "end": "17:00", "enabled": True},
+    "sat": {"start": "10:00", "end": "14:00", "enabled": False},
+    "sun": {"start": "10:00", "end": "14:00", "enabled": False},
+}
+DAY_KEYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
+
+def _parse_hm(s):
+    try:
+        parts = str(s).split(":")
+        return int(parts[0]), int(parts[1]) if len(parts) > 1 else 0
+    except Exception:
+        return 9, 0
+
+def _slot_blocked(slot_start_utc: datetime, slot_end_utc: datetime, blocked_slots: list, recurring_blocks: list) -> bool:
+    """Return True if the [slot_start_utc, slot_end_utc) window overlaps any block."""
+    # One-off date blocks: {"date":"YYYY-MM-DD","start":"HH:MM","end":"HH:MM"}
+    for b in (blocked_slots or []):
+        d = str(b.get("date", "")).strip()
+        if not d:
+            continue
+        try:
+            bs_h, bs_m = _parse_hm(b.get("start", "00:00"))
+            be_h, be_m = _parse_hm(b.get("end", "23:59"))
+            base = datetime.strptime(d, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+            b_start = base.replace(hour=bs_h, minute=bs_m)
+            b_end = base.replace(hour=be_h, minute=be_m)
+            if slot_start_utc < b_end and slot_end_utc > b_start:
+                return True
+        except Exception:
+            continue
+    # Weekly recurring: {"day":"friday","start":"HH:MM","end":"HH:MM"}
+    day_map = {"monday": 0, "tuesday": 1, "wednesday": 2, "thursday": 3, "friday": 4, "saturday": 5, "sunday": 6}
+    for rb in (recurring_blocks or []):
+        day = str(rb.get("day", "")).lower()
+        wd = day_map.get(day)
+        if wd is None:
+            continue
+        if slot_start_utc.weekday() != wd:
+            continue
+        try:
+            bs_h, bs_m = _parse_hm(rb.get("start", "00:00"))
+            be_h, be_m = _parse_hm(rb.get("end", "23:59"))
+            b_start = slot_start_utc.replace(hour=bs_h, minute=bs_m, second=0, microsecond=0)
+            b_end = slot_start_utc.replace(hour=be_h, minute=be_m, second=0, microsecond=0)
+            if slot_start_utc < b_end and slot_end_utc > b_start:
+                return True
+        except Exception:
+            continue
+    return False
+
+def _compute_available_slots(tenant: dict, days_ahead: int = 7, limit: int = 30) -> list:
+    """Compute concrete available booking windows (UTC) for the next `days_ahead` days."""
+    hours = tenant.get("business_hours") or DEFAULT_BUSINESS_HOURS
+    duration = int(tenant.get("meeting_duration") or 30)
+    blocked = tenant.get("blocked_slots") or []
+    recurring = tenant.get("recurring_blocks") or []
+    now = datetime.now(timezone.utc).replace(second=0, microsecond=0)
+    results = []
+    for d in range(days_ahead):
+        day_date = (now + timedelta(days=d)).date()
+        wd = day_date.weekday()  # 0=Mon
+        day_key = DAY_KEYS[wd]
+        conf = hours.get(day_key) or {}
+        if not conf.get("enabled", True):
+            continue
+        s_h, s_m = _parse_hm(conf.get("start", "09:00"))
+        e_h, e_m = _parse_hm(conf.get("end", "17:00"))
+        start = datetime.combine(day_date, datetime.min.time(), tzinfo=timezone.utc).replace(hour=s_h, minute=s_m)
+        end = datetime.combine(day_date, datetime.min.time(), tzinfo=timezone.utc).replace(hour=e_h, minute=e_m)
+        cur = start
+        while cur + timedelta(minutes=duration) <= end:
+            cur_end = cur + timedelta(minutes=duration)
+            if cur >= now and not _slot_blocked(cur, cur_end, blocked, recurring):
+                results.append({
+                    "start_iso": cur.isoformat().replace("+00:00", "Z"),
+                    "end_iso": cur_end.isoformat().replace("+00:00", "Z"),
+                    "label": cur.strftime("%a %b %d, %I:%M %p UTC"),
+                })
+                if len(results) >= limit:
+                    return results
+            cur += timedelta(minutes=duration)
+    return results
+
+def _parse_slot_datetime(slot_text: str) -> Optional[datetime]:
+    """Best-effort parse of freeform slot text -> UTC datetime."""
+    from datetime import datetime as _dt
+    import re as _re
+    if not slot_text:
+        return None
+    # Try ISO first
+    try:
+        cleaned = slot_text.strip().rstrip("Z")
+        return _dt.fromisoformat(cleaned).replace(tzinfo=timezone.utc)
+    except Exception:
+        pass
+    sl = slot_text.lower()
+    base = _dt.now(timezone.utc) + timedelta(days=1)
+    if "today" in sl:
+        base = _dt.now(timezone.utc)
+    elif "next week" in sl:
+        base = _dt.now(timezone.utc) + timedelta(days=7)
+    hm = _re.search(r"(\b\d{1,2})(?::(\d{2}))?\s*(am|pm)?", sl)
+    hour, minute = 15, 0
+    if hm:
+        try:
+            hour = int(hm.group(1)); minute = int(hm.group(2) or 0)
+            ampm = hm.group(3)
+            if ampm == "pm" and hour < 12: hour += 12
+            if ampm == "am" and hour == 12: hour = 0
+            if hour > 23: hour = 15
+        except Exception:
+            hour, minute = 15, 0
+    return base.replace(hour=hour, minute=minute, second=0, microsecond=0)
+
 # ============= MODELS =============
 class RegisterReq(BaseModel):
     full_name: str
@@ -227,6 +347,19 @@ class ProfileUpdate(BaseModel):
     custom_smtp_host: Optional[str] = None
     custom_smtp_user: Optional[str] = None
     custom_smtp_from: Optional[str] = None
+    # Booking rules
+    zoom_meeting_link: Optional[str] = None
+    business_hours: Optional[dict] = None  # {"mon":{"start":"09:00","end":"17:00","enabled":true}, ...}
+    meeting_duration: Optional[int] = None  # in minutes
+    business_timezone: Optional[str] = None
+    blocked_slots: Optional[List[dict]] = None  # [{"date":"2026-02-15","start":"14:00","end":"16:00","note":"..."}]
+    recurring_blocks: Optional[List[dict]] = None  # [{"day":"friday","start":"15:00","end":"23:59"}]
+    # Bot customization
+    logo_url: Optional[str] = None
+    bot_name: Optional[str] = None
+    bot_greeting: Optional[str] = None
+    bot_tone: Optional[str] = None  # professional | friendly | casual | luxury
+    bot_tagline: Optional[str] = None
 
 class AdminClientUpdate(BaseModel):
     """Full editable client fields for the admin Manage-Client screen."""
@@ -254,6 +387,18 @@ class AdminClientUpdate(BaseModel):
     # per-client 3rd-party keys
     resend_api_key: Optional[str] = None
     google_api_key: Optional[str] = None
+    # Booking rules
+    business_hours: Optional[dict] = None
+    meeting_duration: Optional[int] = None
+    business_timezone: Optional[str] = None
+    blocked_slots: Optional[List[dict]] = None
+    recurring_blocks: Optional[List[dict]] = None
+    # Bot customization
+    logo_url: Optional[str] = None
+    bot_name: Optional[str] = None
+    bot_greeting: Optional[str] = None
+    bot_tone: Optional[str] = None
+    bot_tagline: Optional[str] = None
 
 class ChatReq(BaseModel):
     session_id: str
@@ -264,6 +409,8 @@ class BookingReq(BaseModel):
     slot: str
     customer_email: EmailStr
     tenant_id: str
+    customer_phone: Optional[str] = None
+    customer_name: Optional[str] = None
 
 class EscalateReq(BaseModel):
     tenant_id: str
@@ -467,6 +614,28 @@ async def update_profile(req: ProfileUpdate, user=Depends(get_current_user)):
         await db.users.update_one({"id": user["id"]}, {"$set": updates})
     return {"ok": True}
 
+@api_router.post("/me/logo")
+async def upload_logo(file: UploadFile = File(...), user=Depends(get_current_user)):
+    """Upload a bot/business logo. Stored in Emergent Object Storage."""
+    fname = (file.filename or "").lower()
+    if not any(fname.endswith(ext) for ext in [".png", ".jpg", ".jpeg", ".webp", ".svg"]):
+        raise HTTPException(400, "Only PNG, JPG, WEBP, or SVG allowed")
+    data = await file.read()
+    if len(data) > 5 * 1024 * 1024:
+        raise HTTPException(400, "Logo must be under 5MB")
+    ext = fname.rsplit(".", 1)[-1]
+    path = f"{APP_NAME}/logos/{user['id']}/{uuid.uuid4()}.{ext}"
+    ct_map = {"png": "image/png", "jpg": "image/jpeg", "jpeg": "image/jpeg", "webp": "image/webp", "svg": "image/svg+xml"}
+    result = put_object(path, data, ct_map.get(ext, "application/octet-stream"))
+    logo_url = result.get("url") or f"{STORAGE_URL}/objects/{result.get('path', path)}"
+    await db.users.update_one({"id": user["id"]}, {"$set": {"logo_url": logo_url}})
+    return {"ok": True, "logo_url": logo_url}
+
+@api_router.delete("/me/logo")
+async def delete_logo(user=Depends(get_current_user)):
+    await db.users.update_one({"id": user["id"]}, {"$unset": {"logo_url": ""}})
+    return {"ok": True}
+
 @api_router.post("/knowledge/upload")
 async def upload_pdf(file: UploadFile = File(...), user=Depends(get_current_user)):
     # Enforce upload policy
@@ -634,7 +803,42 @@ async def chat_stream(req: ChatReq):
     # Per-tenant Zoom link (share when scheduling video calls)
     zoom_link = tenant.get("zoom_meeting_link", "") if tenant else ""
     if zoom_link:
-        system += f"\n\nZoom meeting link for this business: {zoom_link}. When the visitor books a meeting or asks how to join, include this link in your reply. "
+        system += f"\n\nZoom meeting link for this business: {zoom_link}. When the visitor books a meeting or asks how to join, include this link naturally in your reply so they know where the call happens. "
+
+    # Per-tenant booking rules — compute real available windows so AI never offers a blocked time
+    if tenant:
+        try:
+            _slots = _compute_available_slots(tenant, days_ahead=7, limit=12)
+        except Exception:
+            _slots = []
+        _duration = int(tenant.get("meeting_duration") or 30)
+        _tz = tenant.get("business_timezone") or "UTC"
+        if _slots:
+            _lines = "\n".join([f"- {s['label']} (ISO: {s['start_iso']})" for s in _slots[:12]])
+            system += (
+                f"\n\n=== BOOKING RULES ==="
+                f"\nMeeting length: {_duration} minutes. Timezone: {_tz}."
+                f"\nOnly ever offer slots from this list of currently-available windows (already filters out blocked/off-hours times):"
+                f"\n{_lines}"
+                f"\nWhen the visitor confirms a slot, emit EXACTLY: [[ACTION:book:<ISO start of chosen slot>]] using the ISO value above. Never invent times outside this list."
+            )
+        else:
+            system += (
+                "\n\n=== BOOKING RULES ==="
+                "\nNo bookable slots are currently open. If the visitor asks to book, apologise briefly and offer to take their email so the business will reach out."
+            )
+
+    # Bot persona / tone customisation
+    if tenant:
+        _tone = (tenant.get("bot_tone") or "friendly").lower()
+        _bot_name = tenant.get("bot_name") or tenant.get("full_name") or ""
+        tone_map = {
+            "professional": "Speak clearly and courteously with a polished business tone. Use complete sentences, avoid slang.",
+            "friendly": "Speak warmly and conversationally, like a helpful friend. Feel free to use light contractions.",
+            "casual": "Speak in a relaxed, upbeat casual tone. Short sentences, natural contractions, playful when it fits.",
+            "luxury": "Speak with quiet confidence and understated sophistication, as if concierge at a five-star hotel. Never gushy.",
+        }
+        system += f"\n\nBOT PERSONA: You are called {_bot_name or 'the AI concierge'}. Tone: {tone_map.get(_tone, tone_map['friendly'])}"
 
     # RAG: inject PDF knowledge context
     if tenant_id:
@@ -726,33 +930,31 @@ async def booking_confirm(req: BookingReq):
     tenant = await db.users.find_one({"id": req.tenant_id}, {"_id": 0})
     if not tenant:
         raise HTTPException(404, "Tenant not found")
-    # Build a Google Calendar "add event" URL. Try to parse simple time cues (today, tomorrow, HH:MM am/pm) from the slot text; otherwise default to +1 day 15:00 UTC.
-    from datetime import datetime as _dt
-    import re as _re
-    slot_lower = (req.slot or "").lower()
-    start_utc = _dt.now(timezone.utc) + timedelta(days=1)
-    if "today" in slot_lower:
-        start_utc = _dt.now(timezone.utc)
-    elif "next week" in slot_lower:
-        start_utc = _dt.now(timezone.utc) + timedelta(days=7)
-    # Look for HH(:MM)? (am|pm)?
-    hm = _re.search(r"(\b\d{1,2})(?::(\d{2}))?\s*(am|pm)?", slot_lower)
-    hour, minute = 15, 0
-    if hm:
-        try:
-            hour = int(hm.group(1)); minute = int(hm.group(2) or 0)
-            ampm = hm.group(3)
-            if ampm == "pm" and hour < 12: hour += 12
-            if ampm == "am" and hour == 12: hour = 0
-            if hour > 23: hour = 15
-        except Exception:
-            hour, minute = 15, 0
-    start_utc = start_utc.replace(hour=hour, minute=minute, second=0, microsecond=0)
-    end_utc = start_utc + timedelta(minutes=30)
+    # Parse slot to a real datetime and validate against blocks
+    start_utc = _parse_slot_datetime(req.slot) or (datetime.now(timezone.utc) + timedelta(days=1)).replace(hour=15, minute=0, second=0, microsecond=0)
+    duration = int(tenant.get("meeting_duration") or 30)
+    end_utc = start_utc + timedelta(minutes=duration)
+    # Enforce business rules
+    if _slot_blocked(start_utc, end_utc, tenant.get("blocked_slots") or [], tenant.get("recurring_blocks") or []):
+        raise HTTPException(400, "That time is blocked. Please choose another slot.")
+    # Enforce business hours if configured
+    hours = tenant.get("business_hours") or DEFAULT_BUSINESS_HOURS
+    day_key = DAY_KEYS[start_utc.weekday()]
+    conf = hours.get(day_key) or {}
+    if not conf.get("enabled", True):
+        raise HTTPException(400, "Bookings are closed on that day.")
+    s_h, s_m = _parse_hm(conf.get("start", "09:00"))
+    e_h, e_m = _parse_hm(conf.get("end", "17:00"))
+    open_at = start_utc.replace(hour=s_h, minute=s_m, second=0, microsecond=0)
+    close_at = start_utc.replace(hour=e_h, minute=e_m, second=0, microsecond=0)
+    if start_utc < open_at or end_utc > close_at:
+        raise HTTPException(400, f"Outside business hours ({conf.get('start')}–{conf.get('end')}). Please pick a slot within business hours.")
+
     fmt = "%Y%m%dT%H%M%SZ"
     dates = f"{start_utc.strftime(fmt)}/{end_utc.strftime(fmt)}"
-    title = f"Appointment with {tenant.get('full_name', 'Business')}"
-    details = f"Slot requested: {req.slot}. Booked via Rozio-Killer AI concierge."
+    biz_name = tenant.get("bot_name") or tenant.get("full_name") or "Business"
+    title = f"Appointment with {biz_name}"
+    details = f"Slot: {req.slot}. Booked via {biz_name} AI concierge."
     location = tenant.get("target_domain", "")
     gcal_url = (
         "https://www.google.com/calendar/render?action=TEMPLATE"
@@ -762,17 +964,26 @@ async def booking_confirm(req: BookingReq):
         f"&location={urlquote(location)}"
         f"&add={urlquote(req.customer_email)}"
     )
-    booking = {"id": str(uuid.uuid4()), "tenant_id": req.tenant_id, "slot": req.slot, "customer_email": req.customer_email, "google_calendar_url": gcal_url, "created_at": now_iso()}
+    booking = {
+        "id": str(uuid.uuid4()), "tenant_id": req.tenant_id, "slot": req.slot,
+        "customer_email": req.customer_email, "customer_phone": req.customer_phone,
+        "customer_name": req.customer_name,
+        "start_iso": start_utc.isoformat().replace("+00:00", "Z"),
+        "end_iso": end_utc.isoformat().replace("+00:00", "Z"),
+        "google_calendar_url": gcal_url, "created_at": now_iso(),
+    }
     await db.bookings.insert_one(booking.copy())
     zoom_link = tenant.get("zoom_meeting_link", "") or ""
     zoom_block = ""
     if zoom_link:
         zoom_block = f"<p><b>Zoom Meeting:</b> <a href='{zoom_link}' style='color:#48BB78'>{zoom_link}</a></p>"
+    pretty_time = start_utc.strftime("%A, %b %d at %I:%M %p UTC")
     html = f"""
     <div style='font-family:Arial;padding:24px;background:#1A202C;color:#fff'>
     <h2 style='color:#48BB78'>Appointment Confirmed</h2>
-    <p>Your booking with <b>{tenant.get('full_name', 'the business')}</b> is confirmed.</p>
-    <p><b>Slot:</b> {req.slot}</p>
+    <p>Your booking with <b>{biz_name}</b> is confirmed.</p>
+    <p><b>When:</b> {pretty_time}<br><b>Duration:</b> {duration} minutes</p>
+    <p><b>Requested:</b> {req.slot}</p>
     {zoom_block}
     <p><a href='{gcal_url}' style='display:inline-block;background:#48BB78;color:#1A202C;padding:12px 20px;border-radius:6px;text-decoration:none;font-weight:bold'>Add to Google Calendar</a></p>
     </div>
@@ -797,11 +1008,13 @@ async def booking_confirm(req: BookingReq):
                 service = gapi_build("calendar", "v3", credentials=creds, cache_discovery=False)
                 event = {
                     "summary": title,
-                    "description": details,
+                    "description": details + (f"\nZoom: {zoom_link}" if zoom_link else ""),
                     "start": {"dateTime": start_utc.isoformat().replace("+00:00", "Z")},
                     "end": {"dateTime": end_utc.isoformat().replace("+00:00", "Z")},
                     "attendees": [{"email": req.customer_email}],
                 }
+                if zoom_link:
+                    event["location"] = zoom_link
                 return service.events().insert(calendarId="primary", body=event, sendUpdates="all").execute()
             ev = await asyncio.to_thread(_create_event)
             gcal_event_id = ev.get("id")
@@ -810,8 +1023,21 @@ async def booking_confirm(req: BookingReq):
     # SMS lead alert to business owner
     biz_phone = tenant.get("business_owner_phone") or TELNYX_BUSINESS_OWNER_PHONE
     if TELNYX_API_KEY and TELNYX_PHONE_NUMBER and biz_phone:
-        await send_sms(biz_phone, f"New booking: {req.slot} - {req.customer_email}. Rozio-Killer.")
-    return {"ok": True, "booking": booking, "google_calendar_url": gcal_url, "google_event_id": gcal_event_id}
+        await send_sms(biz_phone, f"New booking with {biz_name}: {pretty_time} - {req.customer_email}")
+    # SMS confirmation to customer if phone provided
+    if TELNYX_API_KEY and TELNYX_PHONE_NUMBER and req.customer_phone:
+        zoom_bit = f" Zoom: {zoom_link}" if zoom_link else ""
+        await send_sms(req.customer_phone, f"Confirmed! Your appointment with {biz_name} is {pretty_time}.{zoom_bit}")
+    await db.metrics.update_one({"tenant_id": req.tenant_id}, {"$inc": {"bookings": 1}}, upsert=True)
+    return {"ok": True, "booking": booking, "google_calendar_url": gcal_url, "google_event_id": gcal_event_id, "zoom_link": zoom_link, "start_iso": booking["start_iso"], "end_iso": booking["end_iso"]}
+
+@api_router.get("/booking/available-slots")
+async def booking_available_slots(tenant_id: str = Query(...), days: int = Query(7)):
+    tenant = await db.users.find_one({"id": tenant_id}, {"_id": 0})
+    if not tenant:
+        raise HTTPException(404, "Tenant not found")
+    slots = _compute_available_slots(tenant, days_ahead=min(max(days, 1), 30), limit=30)
+    return {"ok": True, "slots": slots, "meeting_duration": int(tenant.get("meeting_duration") or 30)}
 
 # ============= ADMIN =============
 @api_router.put("/admin/settings")
