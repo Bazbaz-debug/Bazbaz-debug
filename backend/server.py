@@ -1715,10 +1715,12 @@ async def track_order(req: OrderTrackRequest):
     # Normalise order number ("#1042" -> "1042")
     num = req.order_number.strip().lstrip("#")
     url = f"https://{domain}/admin/api/2024-04/orders.json?name={num}&status=any"
+    import httpx
     try:
-        r = requests.get(url, headers={"X-Shopify-Access-Token": token, "Content-Type": "application/json"}, timeout=15)
-        r.raise_for_status()
-        orders = r.json().get("orders", [])
+        async with httpx.AsyncClient(timeout=15) as client:
+            r = await client.get(url, headers={"X-Shopify-Access-Token": token, "Content-Type": "application/json"})
+            r.raise_for_status()
+            orders = r.json().get("orders", [])
     except Exception as e:
         logger.error(f"Shopify lookup failed: {e}")
         raise HTTPException(502, "Couldn't reach Shopify — please double-check the order number in a moment.")

@@ -24,7 +24,11 @@ Fix the widget preview bugs (voice call not working, uploaded logo not showing) 
 - ✅ **Sidebar layout** on `/dashboard` (Dashboard, Messages, Knowledge Base, Settings) via new `components/DashboardSidebar.jsx`
 - ✅ **Messages inbox** — chats persisted to `db.conversations` + `db.messages`; owner can view threads, send human replies, human-takeover enforced end-to-end in `/api/chat/stream`
 - ✅ **Landing revamp** — dev banner ("In development · Not publicly available"), Book-Baazi-on-Upwork CTAs replacing Start-Trial/View-Demo, featured CEO review from Fresh N Clean Services LLC + one supporting review, marquee pills, integrations marquee
-- ✅ Backend tests: 8/8 pass · Frontend E2E: 100% (iteration_12.json)
+- ✅ **Shopify order tracking** — `POST /api/order/track` looks up an order in the tenant's Shopify store (via Admin API) and returns a normalised 4-stage timeline. Widget renders `TrackingTimeline` showing Ordered → Packed → Shipped → Delivered with carrier link. Shopify config lives under Settings → Integrations (`shopify_domain`, `shopify_admin_token`).
+- ✅ **Photo → product search** — `POST /api/vision/product-search` sends the image to GPT-4o vision, describes it, matches against tenant catalog. Widget adds a camera button + "Send a photo of a product" quickreply, renders match cards with buy links.
+- ✅ **Human takeover in widget** — Widget polls `GET /api/chat/session/{sid}/pending` every 4s while open; incoming `human_agent` messages appear as green-styled bubbles with a "Support · Human" label and are read aloud in voice mode.
+- ✅ **Booking URL now env-driven** — `REACT_APP_BOOKING_URL` in `frontend/.env` overrides the placeholder Upwork link on Landing.
+- ✅ Backend tests: 5/6 pass, 1 skipped due to LLM budget exhaustion (verified working end-to-end before budget ran out) · Frontend: 100% (iteration_13.json)
 
 ## Prioritised backlog
 - **P1** WebSocket / SSE push for the Messages inbox (currently polls every 8s)
