@@ -326,8 +326,7 @@ export default function Widget({ tenant, colors, catalog }) {
             onEnded={() => setSpeaking(false)} onError={() => { setVideoUrl(null); setSpeaking(false); }}
             className="w-full h-40 object-cover" data-testid="widget-avatar-video"/>
         ) : (
-          <img src={avatarUrl(gender)} alt="AI avatar" className="w-full h-40 object-cover bg-[#2D3748] transition-transform duration-300"
-            style={{ transform: speaking || callListening ? "scale(1.03)" : "scale(1)" }} data-testid="widget-avatar-image"/>
+          <img src={avatarUrl(gender)} alt="AI avatar" className={`w-full h-40 object-cover bg-[#2D3748] ${speaking || callListening ? "face-speaking" : "face-alive"}`} data-testid="widget-avatar-image"/>
         )}
         {(speaking || callListening) && !videoUrl && (
           <div className="absolute inset-0 pointer-events-none" style={{ boxShadow: `inset 0 0 60px 8px ${accent}55` }}></div>

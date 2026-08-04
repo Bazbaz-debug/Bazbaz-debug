@@ -1,0 +1,27 @@
+{
+  "summary": "Iter 8 quick retest: Verified the single UI gap from iter 7 - the main widget avatar image (data-testid=widget-avatar-image) now carries the 'face-alive' class. Verified in dashboard sandbox and inside the Live Preview modal. Existing flows (open-preview-btn opens Live Preview, product cards render via [[BUY:...]] parsing) confirmed visually and via DOM inspection.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "verified": [
+    "Main <img data-testid='widget-avatar-image'> class = 'w-full h-40 object-cover bg-[#2D3748] face-alive' on dashboard sandbox",
+    "Inside Live Preview modal, both widget-avatar-image instances also have 'face-alive' class",
+    "open-preview-btn successfully opens the Live Preview — publish-ready sandbox modal",
+    "Product carousel (iPhone 17 Pro, Apple Watch Series 11, iPad Pro 256GB) renders inside the widget confirming [[BUY:...]] parsing path"
+  ],
+  "not_tested": [
+    "voice-only-overlay avatar face-alive class — no voice toggle button visible on this dashboard view; skipped to avoid mic-permission loop. Iter 7 already validated the overlay avatar animation class was present, and no regression is expected since Widget.jsx only added the class to the main img (line 329) without touching the overlay."
+  ],
+  "test_report_links": [],
+  "action_items": [],
+  "critical_code_review_comments": [],
+  "updated_files": [],
+  "success_rate": {"backend": "N/A (skipped as requested)", "frontend": "100%"},
+  "seed_data_creation": "None",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Iter 8 confirmed the face-alive class fix on the main widget-avatar-image element. All iter 7 items now pass. No open UI issues from this scope."
+}
