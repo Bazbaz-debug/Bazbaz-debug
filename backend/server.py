@@ -228,6 +228,33 @@ class ProfileUpdate(BaseModel):
     custom_smtp_user: Optional[str] = None
     custom_smtp_from: Optional[str] = None
 
+class AdminClientUpdate(BaseModel):
+    """Full editable client fields for the admin Manage-Client screen."""
+    full_name: Optional[str] = None
+    target_domain: Optional[str] = None
+    industry: Optional[str] = None
+    custom_instruction: Optional[str] = None
+    crawled_url: Optional[str] = None
+    avatar_gender: Optional[str] = None
+    avatar_background: Optional[str] = None
+    widget_bg: Optional[str] = None
+    bubble_color: Optional[str] = None
+    accent_color: Optional[str] = None
+    # per-client contact / notification
+    notification_email: Optional[str] = None
+    business_owner_phone: Optional[str] = None
+    # per-client Google / Zoom
+    google_email: Optional[str] = None
+    zoom_meeting_link: Optional[str] = None
+    # per-client SMTP override
+    custom_smtp_host: Optional[str] = None
+    custom_smtp_user: Optional[str] = None
+    custom_smtp_pass: Optional[str] = None
+    custom_smtp_from: Optional[str] = None
+    # per-client 3rd-party keys
+    resend_api_key: Optional[str] = None
+    google_api_key: Optional[str] = None
+
 class ChatReq(BaseModel):
     session_id: str
     message: str
@@ -604,6 +631,11 @@ async def chat_stream(req: ChatReq):
     if delivery:
         system += f"\nDelivery windows: {json.dumps(delivery)}. When asked about shipping/timeline by region, cite these accurately. "
 
+    # Per-tenant Zoom link (share when scheduling video calls)
+    zoom_link = tenant.get("zoom_meeting_link", "") if tenant else ""
+    if zoom_link:
+        system += f"\n\nZoom meeting link for this business: {zoom_link}. When the visitor books a meeting or asks how to join, include this link in your reply. "
+
     # RAG: inject PDF knowledge context
     if tenant_id:
         pdf_files = await db.files.find({"user_id": tenant_id, "is_deleted": False}, {"_id": 0, "content": 1, "original_filename": 1}).to_list(5)
@@ -732,16 +764,25 @@ async def booking_confirm(req: BookingReq):
     )
     booking = {"id": str(uuid.uuid4()), "tenant_id": req.tenant_id, "slot": req.slot, "customer_email": req.customer_email, "google_calendar_url": gcal_url, "created_at": now_iso()}
     await db.bookings.insert_one(booking.copy())
+    zoom_link = tenant.get("zoom_meeting_link", "") or ""
+    zoom_block = ""
+    if zoom_link:
+        zoom_block = f"<p><b>Zoom Meeting:</b> <a href='{zoom_link}' style='color:#48BB78'>{zoom_link}</a></p>"
     html = f"""
     <div style='font-family:Arial;padding:24px;background:#1A202C;color:#fff'>
     <h2 style='color:#48BB78'>Appointment Confirmed</h2>
     <p>Your booking with <b>{tenant.get('full_name', 'the business')}</b> is confirmed.</p>
     <p><b>Slot:</b> {req.slot}</p>
+    {zoom_block}
     <p><a href='{gcal_url}' style='display:inline-block;background:#48BB78;color:#1A202C;padding:12px 20px;border-radius:6px;text-decoration:none;font-weight:bold'>Add to Google Calendar</a></p>
     </div>
     """
     await send_email(req.customer_email, "Appointment Confirmed", html)
     await send_email(tenant["email"], "New Booking Received", html)
+    # Optional secondary notification email (business ops mailbox)
+    notif = (tenant.get("notification_email") or "").strip()
+    if notif and notif.lower() != tenant["email"].lower():
+        await send_email(notif, "New Booking Received", html)
     # Try Google Calendar event creation if tenant has OAuth linked
     gcal_event_id = None
     if tenant.get("google_refresh_token") and GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET:
@@ -837,6 +878,28 @@ async def admin_send_forgot(user_id: str, admin=Depends(require_admin)):
 async def admin_update_instruction(user_id: str, req: AdminUpdateInstructionReq, admin=Depends(require_admin)):
     await db.users.update_one({"id": user_id}, {"$set": {"custom_instruction": req.custom_instruction}})
     return {"ok": True}
+
+@api_router.put("/admin/users/{user_id}")
+async def admin_update_client(user_id: str, req: AdminClientUpdate, admin=Depends(require_admin)):
+    """Admin edits any editable field on a client's profile in one shot."""
+    target = await db.users.find_one({"id": user_id}, {"_id": 0})
+    if not target:
+        raise HTTPException(404, "Client not found")
+    if target.get("role") == "admin":
+        raise HTTPException(403, "Cannot edit admin from this endpoint")
+    updates = {k: v for k, v in req.model_dump().items() if v is not None}
+    if not updates:
+        return {"ok": True, "updated": 0}
+    await db.users.update_one({"id": user_id}, {"$set": updates})
+    return {"ok": True, "updated": len(updates), "fields": list(updates.keys())}
+
+@api_router.get("/admin/users/{user_id}")
+async def admin_get_client(user_id: str, admin=Depends(require_admin)):
+    """Full client profile for the admin Manage-Client screen."""
+    u = await db.users.find_one({"id": user_id}, {"_id": 0, "password": 0})
+    if not u:
+        raise HTTPException(404, "Client not found")
+    return u
 
 @api_router.get("/admin/users/{user_id}/files")
 async def admin_user_files(user_id: str, admin=Depends(require_admin)):

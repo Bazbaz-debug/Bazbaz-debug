@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import api from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
-import { Shield, UserPlus, KeyRound, PowerOff, Power, Files, LogOut, Edit3, Save, Bot, Activity, MessagesSquare, CalendarCheck, Mic, PhoneCall, Users, Video, FileText, TrendingUp, CheckCircle2, XCircle, Settings, BarChart3, Upload } from "lucide-react";
+import { Shield, UserPlus, KeyRound, PowerOff, Power, Files, LogOut, Edit3, Save, Bot, Activity, MessagesSquare, CalendarCheck, Mic, PhoneCall, Users, Video, FileText, TrendingUp, CheckCircle2, XCircle, Settings, BarChart3, Upload, Sliders, Globe, Mail, Video as VideoIcon, Phone } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -30,6 +30,10 @@ export default function Admin() {
   const [instructionEdit, setInstructionEdit] = useState(null);
   const [filesModal, setFilesModal] = useState(null);
   const [metricsModal, setMetricsModal] = useState(null);
+  const [manageModal, setManageModal] = useState(null); // full client edit
+  const [manageForm, setManageForm] = useState({});
+  const [manageSaving, setManageSaving] = useState(false);
+  const [manageFiles, setManageFiles] = useState([]);
 
   const load = useCallback(async () => {
     const [s, u, st, h, act] = await Promise.all([
@@ -67,6 +71,49 @@ export default function Admin() {
   const saveInstruction = async () => { await api.put(`/admin/users/${instructionEdit.id}/instruction`, { user_id: instructionEdit.id, custom_instruction: instructionEdit.custom_instruction }); setInstructionEdit(null); load(); toast.success("Instruction override saved"); };
   const openFiles = async (u) => { const { data } = await api.get(`/admin/users/${u.id}/files`); setFilesModal({ user: u, files: data }); };
   const openMetrics = async (u) => { const { data } = await api.get(`/admin/users/${u.id}/metrics`); setMetricsModal({ user: u, m: data }); };
+  const openManage = async (u) => {
+    try {
+      const [{ data: full }, { data: files }] = await Promise.all([
+        api.get(`/admin/users/${u.id}`),
+        api.get(`/admin/users/${u.id}/files`),
+      ]);
+      setManageModal(full);
+      setManageForm({
+        full_name: full.full_name || "",
+        target_domain: full.target_domain || "",
+        industry: full.industry || "General Website",
+        custom_instruction: full.custom_instruction || "",
+        crawled_url: full.crawled_url || "",
+        notification_email: full.notification_email || "",
+        business_owner_phone: full.business_owner_phone || "",
+        google_email: full.google_email || "",
+        zoom_meeting_link: full.zoom_meeting_link || "",
+        custom_smtp_host: full.custom_smtp_host || "",
+        custom_smtp_user: full.custom_smtp_user || "",
+        custom_smtp_pass: full.custom_smtp_pass || "",
+        custom_smtp_from: full.custom_smtp_from || "",
+        resend_api_key: full.resend_api_key || "",
+        google_api_key: full.google_api_key || "",
+      });
+      setManageFiles(files || []);
+    } catch (e) { toast.error("Failed to load client"); }
+  };
+  const saveManage = async () => {
+    if (!manageModal) return;
+    setManageSaving(true);
+    try {
+      await api.put(`/admin/users/${manageModal.id}`, manageForm);
+      toast.success("Client updated");
+      load();
+      setManageModal(null);
+    } catch (e) { toast.error(e?.response?.data?.detail || "Save failed"); }
+    finally { setManageSaving(false); }
+  };
+  const reloadManageFiles = async () => {
+    if (!manageModal) return;
+    const { data } = await api.get(`/admin/users/${manageModal.id}/files`);
+    setManageFiles(data || []);
+  };
 
   return (
     <div className="min-h-screen bg-[#1A202C] text-white relative">
@@ -188,9 +235,9 @@ export default function Admin() {
                   </TableHeader>
                   <TableBody>
                     {users.map(u => (
-                      <TableRow key={u.id} data-testid={`user-row-${u.email}`} className="border-white/5 hover:bg-white/5">
+                      <TableRow key={u.id} data-testid={`user-row-${u.email}`} onClick={() => openManage(u)} className="border-white/5 hover:bg-white/5 cursor-pointer">
                         <TableCell>
-                          <div className="text-white font-bold">{u.full_name}</div>
+                          <div className="text-white font-bold hover:text-[#48BB78] transition-colors">{u.full_name}</div>
                           <div className="text-xs text-[#A0AEC0]">{u.email}</div>
                         </TableCell>
                         <TableCell className="text-[#A0AEC0] text-xs">{u.industry || "-"}</TableCell>
@@ -206,10 +253,9 @@ export default function Admin() {
                         <TableCell>
                           <span className={`text-xs font-bold px-2 py-1 rounded ${u.active ? "bg-[#48BB78]/15 text-[#48BB78]" : "bg-red-500/15 text-red-400"}`}>{u.active ? "ACTIVE" : "DEACTIVATED"}</span>
                         </TableCell>
-                        <TableCell className="text-right space-x-1 whitespace-nowrap">
+                        <TableCell onClick={(e) => e.stopPropagation()} className="text-right space-x-1 whitespace-nowrap">
+                          <Button data-testid={`btn-manage-${u.email}`} onClick={() => openManage(u)} size="sm" className="bg-[#48BB78] hover:bg-[#38A169] text-[#1A202C] hover:text-white font-bold h-8 px-3" title="Manage client"><Sliders size={12} className="mr-1"/>Manage</Button>
                           <Button data-testid={`btn-metrics-${u.email}`} onClick={() => openMetrics(u)} size="sm" variant="outline" className="border-white/10 bg-transparent text-white hover:bg-white/5 h-8 px-2" title="Metrics"><TrendingUp size={12}/></Button>
-                          <Button data-testid={`btn-files-${u.email}`} onClick={() => openFiles(u)} size="sm" variant="outline" className="border-white/10 bg-transparent text-white hover:bg-white/5 h-8 px-2" title="Files"><Files size={12}/></Button>
-                          <Button data-testid={`btn-instr-${u.email}`} onClick={() => setInstructionEdit(u)} size="sm" variant="outline" className="border-white/10 bg-transparent text-white hover:bg-white/5 h-8 px-2" title="Edit Instruction"><Edit3 size={12}/></Button>
                           <Button data-testid={`btn-forgot-${u.email}`} onClick={() => sendForgot(u.id)} size="sm" variant="outline" className="border-[#48BB78]/40 text-[#48BB78] bg-transparent hover:bg-[#48BB78]/10 h-8 px-2" title="Send Reset"><KeyRound size={12}/></Button>
                           <Button data-testid={`btn-toggle-${u.email}`} onClick={() => deactivate(u.id, u.active)} size="sm" variant="outline" className={`h-8 px-2 bg-transparent ${u.active ? "border-red-500/40 text-red-400 hover:bg-red-500/10" : "border-[#48BB78]/40 text-[#48BB78] hover:bg-[#48BB78]/10"}`} title={u.active ? "Deactivate" : "Activate"}>
                             {u.active ? <PowerOff size={12}/> : <Power size={12}/>}
@@ -334,6 +380,131 @@ export default function Admin() {
         </DialogContent>
       </Dialog>
 
+      {/* MANAGE CLIENT MODAL (comprehensive) */}
+      <Dialog open={!!manageModal} onOpenChange={(v) => !v && setManageModal(null)}>
+        <DialogContent className="bg-[#1A202C] border-white/10 text-white max-w-3xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Sliders size={18} className="text-[#48BB78]"/>
+              Manage &mdash; {manageModal?.full_name}
+              <span className="text-xs text-[#A0AEC0] font-normal ml-1">{manageModal?.email}</span>
+            </DialogTitle>
+          </DialogHeader>
+          {manageModal && (
+            <Tabs defaultValue="profile" className="w-full">
+              <TabsList className="bg-[#2D3748] border border-white/5 rounded-md p-1 h-10 grid grid-cols-4 mb-4">
+                <TabsTrigger data-testid="mg-tab-profile" value="profile" className="data-[state=active]:bg-[#1A202C] data-[state=active]:text-[#48BB78] text-[#A0AEC0] text-xs"><Bot size={12} className="mr-1"/>Profile</TabsTrigger>
+                <TabsTrigger data-testid="mg-tab-content" value="content" className="data-[state=active]:bg-[#1A202C] data-[state=active]:text-[#48BB78] text-[#A0AEC0] text-xs"><Globe size={12} className="mr-1"/>Website &amp; Files</TabsTrigger>
+                <TabsTrigger data-testid="mg-tab-integrations" value="integrations" className="data-[state=active]:bg-[#1A202C] data-[state=active]:text-[#48BB78] text-[#A0AEC0] text-xs"><KeyRound size={12} className="mr-1"/>Integrations</TabsTrigger>
+                <TabsTrigger data-testid="mg-tab-metrics" value="metrics" className="data-[state=active]:bg-[#1A202C] data-[state=active]:text-[#48BB78] text-[#A0AEC0] text-xs"><TrendingUp size={12} className="mr-1"/>Metrics</TabsTrigger>
+              </TabsList>
+
+              {/* PROFILE */}
+              <TabsContent value="profile" className="space-y-4">
+                <FieldRow label="Full Name">
+                  <Input data-testid="mg-full_name" value={manageForm.full_name} onChange={e => setManageForm({...manageForm, full_name: e.target.value})} className="bg-[#2D3748] border-white/10 text-white"/>
+                </FieldRow>
+                <FieldRow label="Industry">
+                  <Input data-testid="mg-industry" value={manageForm.industry} onChange={e => setManageForm({...manageForm, industry: e.target.value})} className="bg-[#2D3748] border-white/10 text-white" placeholder="e.g. E-Commerce, SaaS, Local Service"/>
+                </FieldRow>
+                <FieldRow label="Custom AI Instruction" hint="Overrides the AI concierge's business context.">
+                  <Textarea data-testid="mg-custom_instruction" value={manageForm.custom_instruction} onChange={e => setManageForm({...manageForm, custom_instruction: e.target.value})} className="min-h-[110px] bg-[#2D3748] border-white/10 text-white"/>
+                </FieldRow>
+              </TabsContent>
+
+              {/* CONTENT & FILES */}
+              <TabsContent value="content" className="space-y-4">
+                <FieldRow label="Target Website / Domain" hint="The URL where the widget is embedded.">
+                  <Input data-testid="mg-target_domain" value={manageForm.target_domain} onChange={e => setManageForm({...manageForm, target_domain: e.target.value})} className="bg-[#2D3748] border-white/10 text-white" placeholder="https://client-site.com"/>
+                </FieldRow>
+                <FieldRow label="Crawled Catalog URL" hint="Used by the AI to reference real products/services.">
+                  <Input data-testid="mg-crawled_url" value={manageForm.crawled_url} onChange={e => setManageForm({...manageForm, crawled_url: e.target.value})} className="bg-[#2D3748] border-white/10 text-white" placeholder="https://client-site.com/products"/>
+                </FieldRow>
+                <div>
+                  <p className="text-xs uppercase tracking-[0.15em] text-[#48BB78] font-bold mb-2">Knowledge Files (PDF)</p>
+                  <label className="border-2 border-dashed border-white/10 hover:border-[#48BB78]/50 rounded-md p-4 flex items-center justify-center cursor-pointer transition-colors bg-[#2D3748]/50 mb-3" data-testid="mg-upload-zone">
+                    <input data-testid="mg-upload-input" type="file" accept=".pdf" className="hidden" onChange={async (e) => {
+                      const file = e.target.files?.[0]; if (!file || !manageModal) return;
+                      const fd = new FormData(); fd.append("file", file);
+                      try {
+                        const r = await fetch(`${process.env.REACT_APP_BACKEND_URL}/api/admin/users/${manageModal.id}/files/upload`, {
+                          method: "POST", headers: { Authorization: `Bearer ${localStorage.getItem("rk_token")}` }, body: fd,
+                        });
+                        if (!r.ok) throw new Error();
+                        await reloadManageFiles();
+                        toast.success("File uploaded");
+                      } catch { toast.error("Upload failed"); }
+                    }}/>
+                    <span className="text-sm text-[#A0AEC0] inline-flex items-center gap-2"><Upload size={14} className="text-[#48BB78]"/> Click to upload a PDF for this client</span>
+                  </label>
+                  {manageFiles.length ? (
+                    <ul className="space-y-2 max-h-48 overflow-y-auto">
+                      {manageFiles.map(f => (
+                        <li key={f.id} className="bg-[#2D3748] px-3 py-2 rounded-md border border-white/5 text-sm flex justify-between items-center">
+                          <span className="inline-flex items-center gap-2 truncate"><FileText size={14} className="text-[#48BB78] flex-shrink-0"/><span className="truncate">{f.original_filename}</span></span>
+                          <div className="flex items-center gap-2 flex-shrink-0">
+                            <span className="text-[#A0AEC0] text-xs">{(f.size/1024).toFixed(1)} KB</span>
+                            <button data-testid={`mg-file-delete-${f.id}`} onClick={async () => { await api.delete(`/admin/files/${f.id}`); await reloadManageFiles(); toast.success("Deleted"); }} className="text-red-400 hover:text-red-300 text-xs font-bold">Delete</button>
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : <p className="text-[#A0AEC0] text-sm">No files uploaded yet.</p>}
+                </div>
+              </TabsContent>
+
+              {/* INTEGRATIONS */}
+              <TabsContent value="integrations" className="space-y-4">
+                <SectionHeader icon={<Mail size={14}/>} title="Email & Notifications"/>
+                <FieldRow label="Notification Email" hint="CC address for new bookings & escalations.">
+                  <Input data-testid="mg-notification_email" value={manageForm.notification_email} onChange={e => setManageForm({...manageForm, notification_email: e.target.value})} className="bg-[#2D3748] border-white/10 text-white" placeholder="ops@client.com"/>
+                </FieldRow>
+                <FieldRow label="Resend API Key (per-client override)" hint="Overrides the platform key for this client's emails.">
+                  <Input data-testid="mg-resend_api_key" type="password" value={manageForm.resend_api_key} onChange={e => setManageForm({...manageForm, resend_api_key: e.target.value})} className="bg-[#2D3748] border-white/10 text-white font-mono" placeholder="re_..."/>
+                </FieldRow>
+                <FieldRow label="Custom SMTP (From)" hint="Optional: send from client's own domain">
+                  <Input data-testid="mg-smtp_from" value={manageForm.custom_smtp_from} onChange={e => setManageForm({...manageForm, custom_smtp_from: e.target.value})} className="bg-[#2D3748] border-white/10 text-white" placeholder="hello@client.com"/>
+                </FieldRow>
+                <div className="grid grid-cols-3 gap-2">
+                  <Input data-testid="mg-smtp_host" value={manageForm.custom_smtp_host} onChange={e => setManageForm({...manageForm, custom_smtp_host: e.target.value})} className="bg-[#2D3748] border-white/10 text-white" placeholder="SMTP host"/>
+                  <Input data-testid="mg-smtp_user" value={manageForm.custom_smtp_user} onChange={e => setManageForm({...manageForm, custom_smtp_user: e.target.value})} className="bg-[#2D3748] border-white/10 text-white" placeholder="SMTP user"/>
+                  <Input data-testid="mg-smtp_pass" type="password" value={manageForm.custom_smtp_pass} onChange={e => setManageForm({...manageForm, custom_smtp_pass: e.target.value})} className="bg-[#2D3748] border-white/10 text-white" placeholder="SMTP password"/>
+                </div>
+
+                <SectionHeader icon={<CalendarCheck size={14}/>} title="Google Calendar"/>
+                <FieldRow label="Google Email" hint="The Google account tied to the calendar OAuth link.">
+                  <Input data-testid="mg-google_email" value={manageForm.google_email} onChange={e => setManageForm({...manageForm, google_email: e.target.value})} className="bg-[#2D3748] border-white/10 text-white" placeholder="client@gmail.com"/>
+                </FieldRow>
+                <FieldRow label="Google API Key (optional)">
+                  <Input data-testid="mg-google_api_key" type="password" value={manageForm.google_api_key} onChange={e => setManageForm({...manageForm, google_api_key: e.target.value})} className="bg-[#2D3748] border-white/10 text-white font-mono" placeholder="AIza..."/>
+                </FieldRow>
+
+                <SectionHeader icon={<VideoIcon size={14}/>} title="Video Meeting"/>
+                <FieldRow label="Zoom Meeting Link" hint="Shared by the AI when confirming a booking / video call.">
+                  <Input data-testid="mg-zoom_meeting_link" value={manageForm.zoom_meeting_link} onChange={e => setManageForm({...manageForm, zoom_meeting_link: e.target.value})} className="bg-[#2D3748] border-white/10 text-white" placeholder="https://zoom.us/j/1234567890"/>
+                </FieldRow>
+
+                <SectionHeader icon={<Phone size={14}/>} title="Voice / SMS"/>
+                <FieldRow label="Business Owner Phone" hint="Where escalation calls & SMS lead alerts are sent.">
+                  <Input data-testid="mg-business_owner_phone" value={manageForm.business_owner_phone} onChange={e => setManageForm({...manageForm, business_owner_phone: e.target.value})} className="bg-[#2D3748] border-white/10 text-white" placeholder="+15551234567"/>
+                </FieldRow>
+              </TabsContent>
+
+              {/* METRICS */}
+              <TabsContent value="metrics" className="space-y-4">
+                <ClientMetrics userId={manageModal.id}/>
+              </TabsContent>
+            </Tabs>
+          )}
+          <DialogFooter className="mt-4 gap-2 sm:gap-2">
+            <Button data-testid="mg-cancel" onClick={() => setManageModal(null)} variant="outline" className="border-white/10 bg-transparent text-white hover:bg-white/5">Cancel</Button>
+            <Button data-testid="mg-save" onClick={saveManage} disabled={manageSaving} className="bg-[#48BB78] hover:bg-[#38A169] text-[#1A202C] hover:text-white font-bold">
+              <Save size={14} className="mr-1.5"/>{manageSaving ? "Saving..." : "Save changes"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* METRICS MODAL */}
       <Dialog open={!!metricsModal} onOpenChange={(v) => !v && setMetricsModal(null)}>
         <DialogContent className="bg-[#1A202C] border-white/10 text-white">
@@ -383,6 +554,41 @@ function EnvRow({ k, ok, hint }) {
         <code className="text-xs text-white font-mono block truncate">{k}</code>
         {hint && <p className="text-[10px] text-[#A0AEC0] mt-0.5">{hint}</p>}
       </div>
+    </div>
+  );
+}
+
+function FieldRow({ label, hint, children }) {
+  return (
+    <div>
+      <Label className="text-xs uppercase tracking-[0.15em] text-[#48BB78] font-bold mb-1.5 block">{label}</Label>
+      {children}
+      {hint && <p className="text-[11px] text-[#A0AEC0] mt-1">{hint}</p>}
+    </div>
+  );
+}
+
+function SectionHeader({ icon, title }) {
+  return (
+    <div className="flex items-center gap-2 pt-2 border-t border-white/5 -mx-1 px-1">
+      <span className="text-[#48BB78]">{icon}</span>
+      <h4 className="font-display font-bold text-sm text-white">{title}</h4>
+    </div>
+  );
+}
+
+function ClientMetrics({ userId }) {
+  const [m, setM] = useState(null);
+  useEffect(() => { api.get(`/admin/users/${userId}/metrics`).then(r => setM(r.data)).catch(() => setM({})); }, [userId]);
+  if (!m) return <p className="text-sm text-[#A0AEC0]">Loading...</p>;
+  return (
+    <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+      <Stat icon={<MessagesSquare size={14}/>} label="Chats" v={m.chats || 0}/>
+      <Stat icon={<CalendarCheck size={14}/>} label="Bookings" v={m.bookings || 0}/>
+      <Stat icon={<PhoneCall size={14}/>} label="Escalations" v={m.escalations || 0}/>
+      <Stat icon={<Mic size={14}/>} label="Voice sec" v={m.voice_seconds || 0}/>
+      <Stat icon={<Video size={14}/>} label="Videos" v={m.videos || 0}/>
+      <Stat icon={<PhoneCall size={14}/>} label="Calls" v={m.calls || 0}/>
     </div>
   );
 }
