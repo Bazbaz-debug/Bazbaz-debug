@@ -44,7 +44,17 @@ APP_NAME = "rozio-killer"
 STORAGE_URL = "https://integrations.emergentagent.com/objstore/api/v1/storage"
 TWILIO_SID = os.environ.get("TWILIO_ACCOUNT_SID", "")
 TWILIO_TOKEN = os.environ.get("TWILIO_AUTH_TOKEN", "")
+TWILIO_API_KEY_SID = os.environ.get("TWILIO_API_KEY_SID", "")
+TWILIO_API_KEY_SECRET = os.environ.get("TWILIO_API_KEY_SECRET", "")
 TWILIO_FROM = os.environ.get("TWILIO_PHONE_NUMBER", "")
+
+def _twilio_client():
+    """Return a Twilio Client using API Key auth when available, else Auth Token."""
+    if TWILIO_API_KEY_SID and TWILIO_API_KEY_SECRET and TWILIO_SID:
+        return TwilioClient(TWILIO_API_KEY_SID, TWILIO_API_KEY_SECRET, TWILIO_SID)
+    if TWILIO_SID and TWILIO_TOKEN:
+        return TwilioClient(TWILIO_SID, TWILIO_TOKEN)
+    return None
 ESCALATION_TARGET = os.environ.get("ESCALATION_TARGET_PHONE", "")
 FAL_KEY = os.environ.get("FAL_KEY", "")
 if FAL_KEY:
@@ -661,9 +671,9 @@ async def escalate(req: EscalateReq):
         except Exception as e:
             logger.error(f"Telnyx call failed: {e}")
             call_status = f"telnyx_failed: {str(e)[:60]}"
-    elif TWILIO_SID and TWILIO_TOKEN and TWILIO_FROM and business_phone:
+    elif (TWILIO_SID and (TWILIO_TOKEN or (TWILIO_API_KEY_SID and TWILIO_API_KEY_SECRET))) and TWILIO_FROM and business_phone:
         try:
-            tw = TwilioClient(TWILIO_SID, TWILIO_TOKEN)
+            tw = _twilio_client()
             c = tw.calls.create(to=business_phone, from_=TWILIO_FROM,
                 twiml=f"<Response><Say voice='Polly.Joanna'>Live human escalation from Rozio Killer. A customer on {tenant.get('target_domain', 'your site')} is waiting.</Say></Response>")
             call_sid = c.sid
@@ -995,8 +1005,8 @@ async def admin_health(admin=Depends(require_admin)):
         "emergent_llm": bool(EMERGENT_LLM_KEY),
         "resend": bool(RESEND_API_KEY),
         "ses": bool(AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY and SES_FROM_EMAIL),
-        "twilio_configured": bool(TWILIO_SID and TWILIO_TOKEN),
-        "twilio_can_call": bool(TWILIO_SID and TWILIO_TOKEN and TWILIO_FROM),
+        "twilio_configured": bool(TWILIO_SID and (TWILIO_TOKEN or (TWILIO_API_KEY_SID and TWILIO_API_KEY_SECRET))),
+        "twilio_can_call": bool(TWILIO_SID and (TWILIO_TOKEN or (TWILIO_API_KEY_SID and TWILIO_API_KEY_SECRET)) and TWILIO_FROM),
         "twilio_from": TWILIO_FROM or None,
         "telnyx_configured": bool(TELNYX_API_KEY),
         "telnyx_can_call": bool(TELNYX_API_KEY and TELNYX_PHONE_NUMBER),
