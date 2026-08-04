@@ -23,7 +23,7 @@
   ],
   "updated_files": ["/app/backend/tests/test_chat_stream.py"],
   "success_rate": {"backend": "0% (0/6 executed — all blocked by LLM budget, endpoint returns 200 with error SSE frame)", "frontend": "N/A (backend-only request)"},
-  "test_credentials": "Demo tenant id=59d01823-0f99-4ee3-a24a-6d162645771e used as user_id in payloads.",
+  "test_credentials": "Demo tenant id=github-static-host used as user_id in payloads.",
   "seed_data_creation": "None. Reuses existing demo tenant catalog (iPhone 17 Pro $1099, MacBook Pro $1999, etc.).",
   "retest_needed": true,
   "should_main_agent_self_test": false,

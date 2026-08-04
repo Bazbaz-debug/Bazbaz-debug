@@ -1042,7 +1042,7 @@ async def public_avatar(gender: str):
 
 @api_router.get("/avatar/profiles")
 async def avatar_profiles():
-    frontend_url = os.environ.get("REACT_APP_BACKEND_URL") or "https://fal-lipsync-test.preview.emergentagent.com"
+    frontend_url = os.environ.get("REACT_APP_BACKEND_URL") or "https://github-static-host.preview.emergentagent.com"
     return {k: {"image": f"{frontend_url}/api/public/avatar/{k}.jpg", "voice": v["voice"], "label": v["label"]} for k, v in AVATAR_PROFILES.items()}
 
 class LipsyncReq(BaseModel):
@@ -1084,7 +1084,7 @@ async def avatar_lipsync(req: LipsyncReq):
     if len(_temp_audio) > 20:
         for old_key in list(_temp_audio.keys())[:-20]:
             _temp_audio.pop(old_key, None)
-    frontend_url = os.environ.get("REACT_APP_BACKEND_URL") or "https://fal-lipsync-test.preview.emergentagent.com"
+    frontend_url = os.environ.get("REACT_APP_BACKEND_URL") or "https://github-static-host.preview.emergentagent.com"
     audio_url = f"{frontend_url}/api/public/audio/{aid}.mp3"
     # 2) Submit to fal
     try:
@@ -1168,7 +1168,7 @@ async def embed_loader(tenant_id: str):
     tenant = await db.users.find_one({"id": tenant_id, "active": True}, {"_id": 0})
     if not tenant:
         return Response(content="console.warn('[Rozio-Killer] widget disabled - account inactive or missing');", media_type="application/javascript")
-    frontend_url = os.environ.get("FRONTEND_URL", "").rstrip("/") or "https://fal-lipsync-test.preview.emergentagent.com"
+    frontend_url = os.environ.get("FRONTEND_URL", "").rstrip("/") or "https://github-static-host.preview.emergentagent.com"
     bg = tenant.get("widget_bg", "#1A202C")
     bubble = tenant.get("bubble_color", "#48BB78")
     accent = tenant.get("accent_color", "#48BB78")
