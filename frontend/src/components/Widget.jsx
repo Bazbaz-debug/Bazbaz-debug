@@ -8,6 +8,12 @@ function avatarUrl(gender) {
   return `${backend}/api/public/avatar/${gender}.jpg`;
 }
 
+function resolveLogoUrl(logo_url) {
+  if (!logo_url) return "";
+  if (logo_url.startsWith("http")) return logo_url;
+  return `${process.env.REACT_APP_BACKEND_URL}${logo_url}`;
+}
+
 // Parse action + language + buy markers from streaming text
 function extractActions(text) {
   const actions = [];
@@ -285,14 +291,26 @@ export default function Widget({ tenant, colors, catalog, embedded = false, onCl
   // ============ Voice Call mode: continuous SpeechRecognition loop ============
   const startCall = async () => {
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SR) { toast.error("Voice call needs Chrome or Edge browser"); return; }
+    // First: ensure microphone permission is actually granted (helps in
+    // sandbox/preview iframes where permissions must be prompted).
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      stream.getTracks().forEach(t => t.stop());
+    } catch (e) {
+      toast.error("Please allow microphone access to start the voice call");
+      return;
+    }
     callActiveRef.current = true;
     setCallActive(true);
     setVoiceMode(true);
     setMessages(m => [...m, { role: "assistant", text: "Voice call started. Just talk — I'll listen." }]);
-    // Greet fast via browser speech
     await playTTS("Hey — you're on. What can I do for you?");
-    listenLoop();
+    if (SR) {
+      listenLoop();
+    } else {
+      // Fallback: Whisper hold-to-talk still works. Show hint instead of blocking.
+      toast("Hold the mic button to talk (voice recognition unavailable in this browser)", { icon: "🎙️" });
+    }
   };
   const listenLoop = () => {
     if (!callActiveRef.current) return;
@@ -381,7 +399,7 @@ export default function Widget({ tenant, colors, catalog, embedded = false, onCl
         <div className="relative flex items-center gap-3">
           {tenant?.logo_url ? (
             <div className="relative w-11 h-11 rounded-2xl flex items-center justify-center flex-shrink-0 overflow-hidden bg-white/8 border border-white/15" data-testid="widget-logo" style={{ boxShadow: `0 4px 16px ${accent}33` }}>
-              <img src={tenant.logo_url} alt="logo" className="w-full h-full object-contain"/>
+              <img src={resolveLogoUrl(tenant.logo_url)} alt="logo" className="w-full h-full object-contain"/>
               <span className="absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2" style={{ background: "#48BB78", borderColor: bg }}></span>
             </div>
           ) : (

@@ -709,7 +709,9 @@ async def update_profile(req: ProfileUpdate, user=Depends(get_current_user)):
 
 @api_router.post("/me/logo")
 async def upload_logo(file: UploadFile = File(...), user=Depends(get_current_user)):
-    """Upload a bot/business logo. Stored in Emergent Object Storage."""
+    """Upload a bot/business logo. Stored in Emergent Object Storage.
+    Returns a *public* backend proxy URL (browsers cannot hit the storage service
+    directly because it requires an X-Storage-Key header)."""
     fname = (file.filename or "").lower()
     if not any(fname.endswith(ext) for ext in [".png", ".jpg", ".jpeg", ".webp", ".svg"]):
         raise HTTPException(400, "Only PNG, JPG, WEBP, or SVG allowed")
@@ -719,15 +721,50 @@ async def upload_logo(file: UploadFile = File(...), user=Depends(get_current_use
     ext = fname.rsplit(".", 1)[-1]
     path = f"{APP_NAME}/logos/{user['id']}/{uuid.uuid4()}.{ext}"
     ct_map = {"png": "image/png", "jpg": "image/jpeg", "jpeg": "image/jpeg", "webp": "image/webp", "svg": "image/svg+xml"}
-    result = put_object(path, data, ct_map.get(ext, "application/octet-stream"))
-    logo_url = result.get("url") or f"{STORAGE_URL}/objects/{result.get('path', path)}"
-    await db.users.update_one({"id": user["id"]}, {"$set": {"logo_url": logo_url}})
-    return {"ok": True, "logo_url": logo_url}
+    content_type = ct_map.get(ext, "application/octet-stream")
+    put_object(path, data, content_type)
+    # Save storage-side path + content type; return a public backend URL that
+    # streams the object with cache-busting version.
+    version = uuid.uuid4().hex[:8]
+    public_url = f"/api/public/logo/{user['id']}?v={version}"
+    await db.users.update_one({"id": user["id"]}, {"$set": {
+        "logo_url": public_url,
+        "logo_storage_path": path,
+        "logo_content_type": content_type,
+    }})
+    return {"ok": True, "logo_url": public_url}
 
 @api_router.delete("/me/logo")
 async def delete_logo(user=Depends(get_current_user)):
-    await db.users.update_one({"id": user["id"]}, {"$unset": {"logo_url": ""}})
+    await db.users.update_one({"id": user["id"]}, {"$unset": {"logo_url": "", "logo_storage_path": "", "logo_content_type": ""}})
     return {"ok": True}
+
+@api_router.get("/public/logo/{tenant_id}")
+async def public_logo(tenant_id: str):
+    """Publicly serve a tenant's uploaded logo. Fetches from Emergent Object
+    Storage using our server-side X-Storage-Key, streams the bytes back so any
+    <img> tag can render it (used by the widget header + dashboard preview)."""
+    t = await db.users.find_one({"id": tenant_id})
+    if not t or not t.get("logo_storage_path"):
+        raise HTTPException(404, "No logo")
+    key = init_storage()
+    if not key:
+        raise HTTPException(500, "Storage unavailable")
+    try:
+        r = requests.get(
+            f"{STORAGE_URL}/objects/{t['logo_storage_path']}",
+            headers={"X-Storage-Key": key},
+            timeout=30,
+        )
+        r.raise_for_status()
+    except Exception as e:
+        logger.error(f"Fetch logo failed: {e}")
+        raise HTTPException(502, "Logo fetch failed")
+    return Response(
+        content=r.content,
+        media_type=t.get("logo_content_type") or "image/png",
+        headers={"Cache-Control": "public, max-age=3600"},
+    )
 
 @api_router.post("/knowledge/upload")
 async def upload_pdf(file: UploadFile = File(...), user=Depends(get_current_user)):
@@ -949,10 +986,26 @@ async def chat_stream(req: ChatReq):
     if tenant_id:
         await db.metrics.update_one({"tenant_id": tenant_id}, {"$inc": {"chats": 1}}, upsert=True)
 
+    # Persist inbound message + upsert conversation record for the Messages inbox
+    if tenant_id:
+        _now = now_iso()
+        await db.conversations.update_one(
+            {"session_id": req.session_id, "tenant_id": tenant_id},
+            {
+                "$setOnInsert": {"id": str(uuid.uuid4()), "session_id": req.session_id, "tenant_id": tenant_id, "created_at": _now, "status": "ai"},
+                "$set": {"last_message": req.message[:200], "last_at": _now},
+                "$inc": {"msg_count": 1},
+            },
+            upsert=True,
+        )
+        await db.messages.insert_one({"id": str(uuid.uuid4()), "session_id": req.session_id, "tenant_id": tenant_id, "role": "user", "text": req.message, "created_at": _now})
+
     async def gen():
+        acc_reply = ""
         try:
             async for ev in chat.stream_message(UserMessage(text=req.message)):
                 if isinstance(ev, TextDelta):
+                    acc_reply += ev.content
                     yield f"data: {json.dumps({'delta': ev.content})}\n\n"
                 elif isinstance(ev, StreamDone):
                     break
@@ -960,6 +1013,19 @@ async def chat_stream(req: ChatReq):
         except Exception as e:
             logger.error(f"Chat error: {e}")
             yield f"data: {json.dumps({'error': str(e)})}\n\n"
+        # Persist AI reply (strip markers for cleaner inbox)
+        if tenant_id and acc_reply:
+            _clean = acc_reply
+            for _pat in [r"\[\[LANG:[a-z]{2}\]\]", r"\[\[ACTION:[^\]]+\]\]", r"\[\[BUY:[^\]]+\]\]"]:
+                import re as _re
+                _clean = _re.sub(_pat, "", _clean, flags=_re.IGNORECASE)
+            _clean = _clean.strip()
+            _now2 = now_iso()
+            await db.messages.insert_one({"id": str(uuid.uuid4()), "session_id": req.session_id, "tenant_id": tenant_id, "role": "assistant", "text": _clean, "created_at": _now2})
+            await db.conversations.update_one(
+                {"session_id": req.session_id, "tenant_id": tenant_id},
+                {"$set": {"last_reply": _clean[:200], "last_at": _now2}, "$inc": {"msg_count": 1}},
+            )
 
     return StreamingResponse(gen(), media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
@@ -1514,6 +1580,59 @@ async def me_metrics(user=Depends(get_current_user)):
         "voice_minutes": voice_min,
         "conversion_rate": conv_rate,
     }
+
+# ============= MESSAGES INBOX =============
+@api_router.get("/messages/conversations")
+async def list_conversations(user=Depends(get_current_user)):
+    """List all conversations for this tenant, most recent first."""
+    convs = await db.conversations.find(
+        {"tenant_id": user["id"]}, {"_id": 0}
+    ).sort("last_at", -1).limit(200).to_list(200)
+    return convs
+
+@api_router.get("/messages/conversations/{session_id}")
+async def get_conversation(session_id: str, user=Depends(get_current_user)):
+    """Return all messages in a conversation for this tenant."""
+    conv = await db.conversations.find_one({"session_id": session_id, "tenant_id": user["id"]}, {"_id": 0})
+    if not conv:
+        raise HTTPException(404, "Conversation not found")
+    msgs = await db.messages.find(
+        {"session_id": session_id, "tenant_id": user["id"]}, {"_id": 0}
+    ).sort("created_at", 1).to_list(1000)
+    return {"conversation": conv, "messages": msgs}
+
+class MessageReply(BaseModel):
+    text: str
+
+@api_router.post("/messages/conversations/{session_id}/reply")
+async def human_reply(session_id: str, req: MessageReply, user=Depends(get_current_user)):
+    """Business owner takes over the chat and posts a human reply.
+    Marks the conversation as human-handled so future visitor messages aren't
+    auto-answered by the AI (front-end respects the 'status' field)."""
+    conv = await db.conversations.find_one({"session_id": session_id, "tenant_id": user["id"]})
+    if not conv:
+        raise HTTPException(404, "Conversation not found")
+    _now = now_iso()
+    await db.messages.insert_one({
+        "id": str(uuid.uuid4()), "session_id": session_id, "tenant_id": user["id"],
+        "role": "human_agent", "text": req.text, "created_at": _now,
+    })
+    await db.conversations.update_one(
+        {"session_id": session_id, "tenant_id": user["id"]},
+        {"$set": {"status": "human", "last_reply": req.text[:200], "last_at": _now, "human_active": True}, "$inc": {"msg_count": 1}},
+    )
+    return {"ok": True}
+
+@api_router.post("/messages/conversations/{session_id}/mark")
+async def mark_conversation(session_id: str, status: str = Query(...), user=Depends(get_current_user)):
+    """Mark a conversation as read/closed/ai/human."""
+    if status not in ("read", "closed", "ai", "human", "open"):
+        raise HTTPException(400, "Invalid status")
+    await db.conversations.update_one(
+        {"session_id": session_id, "tenant_id": user["id"]},
+        {"$set": {"status": status}},
+    )
+    return {"ok": True}
 
 # ============= VOICE (Whisper STT + OpenAI TTS) =============
 @api_router.post("/voice/stt")

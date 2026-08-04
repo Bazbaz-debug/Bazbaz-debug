@@ -1,0 +1,36 @@
+{
+  "summary": "Backend (pytest 8/8 PASS) + Frontend E2E for iteration 11 (sidebar dashboard, Messages inbox, public logo endpoint, chat persistence, landing revamp). Backend: (1) BACKEND-1 /api/public/logo/{tenant_id} returns 200 image/png bytes after upload, 404 for missing tenant and after DELETE /me/logo, (2) BACKEND-2 /api/messages/conversations list + detail require JWT (401 unauth), reply endpoint inserts human_agent msg and flips conversation.status='human', /mark?status=closed works, unknown session 404, (3) BACKEND-3 /api/chat/stream persists to db.conversations (msg_count>=2, status='ai') and db.messages (roles user+assistant present). Frontend: Landing has marquee-pills, review-0..3, hero-cta-btn all present. Sidebar has 4 nav items + install-guides + logout with section switching. Widget on Dashboard section renders widget-startcall-btn + widget-logo. BUG-1 FIXED: logo upload -> current-logo <img> src loads /api/public/logo/{tid}?v=... with naturalWidth>0; the same URL is shown inside widget-logo in the sandbox widget. BUG-2 FIXED: clicking widget-startcall-btn opens voice-only-overlay with zero page errors and zero blocking toasts (in headless mic is granted by Chromium). Settings has 4 sub-tabs (branding/bot/booking/integrations). KB tab has all 5 controls; industry select persists across reload (E-Commerce stayed). Messages inbox shows seeded conversation (qa-ui-final), thread visible with 2 messages (user + assistant), inbox-reply-send posts and thread refreshes. Live Preview modal opens, iframe loads example.com. All flows working.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "Messages inbox list badge", "issue": "After clicking inbox-reply-send, the current conversation row still shows the 'AI' badge until the 8s polling interval refreshes convs. sendHumanReply() calls loadThread() but not loadConvs(), so the parent list state is stale. Badge text remains 'AI' for up to 8 seconds even though the conversation is now human-handled server-side.", "selector": "[data-testid=inbox-conv-<id>]", "priority": "LOW"}
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Dashboard topbar title", "issues": ["When section is 'dashboard' or 'messages' or 'settings', the topbar h1 text renders as lowercase (e.g. 'dashboard' instead of 'Dashboard' / 'Messages' / 'Settings'). Knowledge Base is the only one that renders titlecase. Minor consistency issue — the visible title should be Titlecase per the review request wording."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration11.py",
+    "/app/test_reports/pytest/iter11_results.xml"
+  ],
+  "action_items": [
+    "In Dashboard.jsx sendHumanReply(), also call loadConvs() after reply to immediately flip the badge from 'AI' to 'You' without waiting for the 8s poll.",
+    "Titlecase the topbar section labels (Dashboard, Messages, Settings) — currently rendering lowercase for 3 of 4 sections."
+  ],
+  "critical_code_review_comments": [
+    "Widget.jsx startCall() calls navigator.mediaDevices.getUserMedia inside a try; on rejection the code should show a toast. In headless the browser auto-grants, so this path wasn't exercised — verify manually that a denial shows a user-friendly toast rather than a silent no-op.",
+    "server.py:1616 human_reply inserts a message with role='human_agent' but the widget's rendering path in Widget.jsx only distinguishes 'user' vs everything-else as assistant. Ensure the embedded widget can also receive/display human_agent messages so the visitor knows a human replied (currently the reply is only visible in the owner's inbox).",
+    "Dashboard.jsx is now 874 lines — well over the 700-line guideline. Split MessagesInbox, KnowledgeBasePanel, BrandingPanel, BotIdentityPanel, BookingRulesPanel, IntegrationsPanel, LivePreviewModal into their own files.",
+    "server.py /messages/conversations polls every 8s from every logged-in dashboard — consider websocket push or SSE for inbox updates to reduce load and remove the badge-lag bug.",
+    "server.py:995 stores conversations with status='ai' by default; when POST /reply flips to 'human', but there is no endpoint for the visitor's future messages to STOP hitting the LLM. /api/chat/stream doesn't check conversation.status='human' and will still stream an AI reply on top of the human reply — the human takeover isn't actually enforced end-to-end."
+  ],
+  "updated_files": ["/app/backend/tests/test_iteration11.py"],
+  "success_rate": {"backend": "100% (8/8)", "frontend": "~95% (all critical selectors and flows work; 2 minor cosmetic issues)"},
+  "test_credentials": "demo@client.com / Demo@12345 (tenant 3c1aea51-4eac-49fd-8198-cc5bf1e155dc); admin@rozio-killer.com / Admin@12345",
+  "seed_data_creation": "Uploaded a 1x1 test PNG as demo tenant logo (still active). Seeded conversations 'qa-ui-final' and dynamic 'qa-reply-*' + 'qa-test-*' via chat/stream; one has status='human' after reply, one has status='closed' from mark endpoint.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Run: pytest backend/tests/test_iteration11.py -v (needs REACT_APP_BACKEND_URL env or default preview URL reachable). The auth response uses key 'token' (not 'access_token'). Demo tenant has a test logo — DELETE /api/me/logo to reset. Seed inbox via curl POST /api/chat/stream with a fresh session_id before UI test.",
+  "rca of the issue": "N/A — no blocker bugs. BUG-1 (logo not showing) is FIXED: widget now uses resolveLogoUrl() and /api/public/logo/{tid} proxy so image renders. BUG-2 (call button silent) is FIXED: startCall now requests mic first and opens the voice-only-overlay (no unhandled errors). The two remaining minor issues (badge lag + lowercase titles) are cosmetic."
+}

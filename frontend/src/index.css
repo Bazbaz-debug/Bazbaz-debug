@@ -178,3 +178,42 @@ input[type="color"].hide-native::-webkit-color-swatch { border: 2px solid rgba(2
   background: var(--primary); transition: right 0.3s ease;
 }
 .link-underline:hover::after { right: 0; }
+
+
+/* Infinite marquee for pills / logos row */
+@keyframes marquee-x {
+  0% { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
+}
+.marquee-track {
+  display: inline-flex;
+  animation: marquee-x 40s linear infinite;
+  will-change: transform;
+}
+.marquee-track:hover { animation-play-state: paused; }
+
+.marquee-track-fast { animation: marquee-x 22s linear infinite; }
+.marquee-track-reverse { animation: marquee-x 44s linear infinite reverse; }
+
+/* Gradient text for hero accents */
+.gradient-text-primary {
+  background: linear-gradient(135deg, #48BB78 0%, #38B2AC 50%, #4299E1 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+/* Floating orb glow */
+@keyframes float-orb {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  33% { transform: translate(30px, -30px) scale(1.06); }
+  66% { transform: translate(-20px, 20px) scale(0.96); }
+}
+.float-orb { animation: float-orb 14s ease-in-out infinite; }
+
+/* Star rating */
+.star { fill: #F6AD55; stroke: #F6AD55; }
+
+/* Fade in section on view */
+@keyframes fade-up { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
+.fade-up { animation: fade-up 0.7s cubic-bezier(.2,.9,.3,1) both; }
