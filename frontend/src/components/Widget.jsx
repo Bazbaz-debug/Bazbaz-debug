@@ -366,100 +366,95 @@ export default function Widget({ tenant, colors, catalog }) {
           </button>
         </div>
       )}
-      {/* Avatar */}
-      <div className="relative">
-        {videoUrl ? (
-          <video ref={videoElRef} src={videoUrl} autoPlay playsInline controls={false}
-            onEnded={() => setSpeaking(false)} onError={() => { setVideoUrl(null); setSpeaking(false); }}
-            className="w-full h-40 object-cover" data-testid="widget-avatar-video"/>
-        ) : (
-          <div className={`w-full h-40 overflow-hidden bg-[#2D3748] ${speaking || callListening ? "face-speaking" : "face-alive"}`}>
-            <img src={avatarUrl(gender)} alt="AI avatar" className="w-full h-full object-cover" data-face data-base-scale="1.65" style={{ objectPosition: "center 18%", transform: "scale(1.65)", transition: "transform 60ms linear, filter 60ms linear" }} data-testid="widget-avatar-image"/>
-          </div>
-        )}
-        {/* Audio-reactive mouth on inline avatar */}
-        {speaking && !videoUrl && (
-          <div className="absolute pointer-events-none" style={{ left: "50%", bottom: "55%", width: "24px", height: "6px", transform: "translateX(-50%)", transformOrigin: "center center" }}>
-            <div data-mouth className="w-full h-full rounded-[50%]" style={{ background: "radial-gradient(ellipse at center, rgba(20,4,8,0.85) 0%, rgba(6,1,2,0.95) 90%)", boxShadow: `inset 0 -1px 2px rgba(0,0,0,0.85), inset 0 1px 1px rgba(160,50,60,0.4)`, transformOrigin: "center center", transition: "transform 55ms linear, opacity 55ms linear", mixBlendMode: "multiply" }}></div>
-          </div>
-        )}
-        {generatingVideo && (
-          <div className="absolute inset-0 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-            <div className="flex items-center gap-2 text-white text-xs font-bold"><Loader2 className="animate-spin" size={14}/> Generating lip-synced video...</div>
-          </div>
-        )}
-        <div className="absolute top-3 left-3 flex items-center gap-2 bg-black/60 backdrop-blur px-2.5 py-1 rounded-full">
-          <span className="w-2 h-2 rounded-full pulse-dot" style={{ background: accent }}></span>
-          <span className="text-xs font-bold text-white">
-            {callActive ? (callListening ? "LISTENING" : "IN CALL") : (speaking ? "SPEAKING" : "LIVE · AI Avatar")}
-          </span>
-          {speaking && <Volume2 size={11} className="text-white"/>}
+      {/* Chat mode: sleek header (no face) */}
+      <div className="px-4 py-3 flex items-center gap-3 border-b border-white/5" style={{ background: "linear-gradient(180deg, rgba(255,255,255,0.03) 0%, transparent 100%)" }}>
+        <div className="relative w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0" style={{ background: `linear-gradient(135deg, ${accent}, ${accent}88)` }}>
+          <Sparkles size={16} className="text-[#0D1117]"/>
+          <span className="absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2" style={{ background: "#48BB78", borderColor: bg }}></span>
         </div>
-        <button data-testid="widget-close-btn" onClick={() => setOpen(false)} className="absolute top-3 right-3 w-7 h-7 rounded-full bg-black/60 flex items-center justify-center text-white hover:bg-black/80"><X size={14}/></button>
-        <div className="absolute bottom-3 right-3 flex gap-1.5">
-          <button data-testid="widget-lipsync-toggle" onClick={() => setLipsyncMode(v => !v)} title="Lip-synced video mode" className="text-[10px] font-bold px-2 py-1 rounded-full inline-flex items-center gap-1" style={{ background: lipsyncMode ? accent : "rgba(0,0,0,0.6)", color: lipsyncMode ? "#1A202C" : "#fff" }}>
-            <Sparkles size={10}/> {lipsyncMode ? "VIDEO" : "STILL"}
-          </button>
-          <button data-testid="widget-voice-toggle" onClick={() => setVoiceMode(v => !v)} title="Toggle voice mode" className="text-[10px] font-bold px-2 py-1 rounded-full" style={{ background: voiceMode ? accent : "rgba(0,0,0,0.6)", color: voiceMode ? "#1A202C" : "#fff" }}>
-            {voiceMode ? "VOICE ON" : "VOICE OFF"}
-          </button>
+        <div className="flex-1 min-w-0">
+          <p className="text-white text-sm font-bold leading-tight truncate">{tenant?.full_name || "AI Concierge"}</p>
+          <p className="text-white/50 text-[11px] leading-tight">Online &middot; replies instantly</p>
         </div>
+        <button data-testid="widget-startcall-btn" onClick={startCall} title="Start face-to-face voice call" className="w-9 h-9 rounded-full flex items-center justify-center transition-transform hover:scale-105" style={{ background: `${accent}18`, color: accent, border: `1px solid ${accent}44` }}>
+          <PhoneCall size={15}/>
+        </button>
+        <button data-testid="widget-close-btn" onClick={() => setOpen(false)} className="w-9 h-9 rounded-full flex items-center justify-center text-white/60 hover:text-white hover:bg-white/5 transition-colors">
+          <X size={16}/>
+        </button>
       </div>
       {/* Messages */}
-      <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-4 space-y-3" style={{ maxHeight: 300 }}>
-        {messages.map((m, i) => (
-          <div key={i} className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}>
-            <div className="max-w-[80%] px-3 py-2 rounded-xl text-sm leading-relaxed" style={m.role === "user" ? { background: bubble, color: "#1A202C" } : { background: "#2D3748", color: "#fff" }}>
-              {m.text || <Loader2 className="animate-spin" size={14}/>}
-              {m.gcal && (
-                <a href={m.gcal} target="_blank" rel="noopener noreferrer" data-testid="widget-gcal-link" className="mt-1.5 block text-xs font-bold underline" style={{ color: accent }}>Add to Google Calendar &rarr;</a>
-              )}
-              {m.buys && m.buys.length > 0 && (
-                <div className="mt-2 flex flex-col gap-1.5">
-                  {m.buys.map((b, bi) => (
-                    <a key={bi} href={b.url} target="_blank" rel="noopener noreferrer" data-testid={`widget-buy-btn-${bi}`} className="inline-flex items-center justify-center gap-1.5 text-xs font-bold px-3 py-2 rounded-md" style={{ background: accent, color: "#1A202C" }}>
-                      <ShoppingCart size={12}/> Buy {b.name}
-                    </a>
-                  ))}
-                </div>
-              )}
+      <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-4 space-y-3" style={{ maxHeight: 380, background: "radial-gradient(circle at 50% 0%, rgba(72,187,120,0.04) 0%, transparent 60%)" }}>
+        {messages.map((m, i) => {
+          const isUser = m.role === "user";
+          const isEmpty = !m.text;
+          return (
+            <div key={i} className={`flex ${isUser ? "justify-end" : "justify-start"} msg-in`}>
+              <div className={`max-w-[85%] px-3.5 py-2.5 text-[13px] leading-relaxed shadow-sm ${isUser ? "rounded-2xl rounded-br-md" : "rounded-2xl rounded-bl-md"}`} style={isUser ? { background: `linear-gradient(135deg, ${bubble}, ${bubble}dd)`, color: "#0D1117" } : { background: "rgba(255,255,255,0.06)", color: "#fff", border: "1px solid rgba(255,255,255,0.06)" }}>
+                {isEmpty && !isUser ? (
+                  <div className="flex items-center gap-1 py-1" data-testid="widget-typing">
+                    <span className="w-1.5 h-1.5 rounded-full typing-dot" style={{ background: accent, animationDelay: "0ms" }}></span>
+                    <span className="w-1.5 h-1.5 rounded-full typing-dot" style={{ background: accent, animationDelay: "160ms" }}></span>
+                    <span className="w-1.5 h-1.5 rounded-full typing-dot" style={{ background: accent, animationDelay: "320ms" }}></span>
+                  </div>
+                ) : (
+                  <span className="whitespace-pre-wrap">{m.text}</span>
+                )}
+                {m.gcal && (
+                  <a href={m.gcal} target="_blank" rel="noopener noreferrer" data-testid="widget-gcal-link" className="mt-2 block text-xs font-bold underline" style={{ color: isUser ? "#0D1117" : accent }}>Add to Google Calendar &rarr;</a>
+                )}
+                {m.buys && m.buys.length > 0 && (
+                  <div className="mt-2.5 flex flex-col gap-1.5">
+                    {m.buys.map((b, bi) => (
+                      <a key={bi} href={b.url} target="_blank" rel="noopener noreferrer" data-testid={`widget-buy-btn-${bi}`} className="inline-flex items-center justify-center gap-1.5 text-xs font-bold px-3 py-2 rounded-lg hover:opacity-90 transition-opacity" style={{ background: accent, color: "#0D1117" }}>
+                        <ShoppingCart size={12}/> Buy {b.name}
+                      </a>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          );
+        })}
+        {catalog && catalog.length > 0 && messages.length <= 2 && (
+          <div className="pt-2">
+            <p className="text-[10px] uppercase tracking-widest text-white/40 font-bold mb-2">Popular right now</p>
+            <div className="grid grid-cols-3 gap-2">
+              {catalog.slice(0, 3).map((p, i) => (
+                <button key={i} data-testid={`widget-product-${i}`} onClick={() => sendText(`Tell me about the ${p.name}`)} className="text-left bg-white/[0.04] hover:bg-white/[0.08] rounded-xl overflow-hidden border border-white/5 transition-colors">
+                  <img src={p.image} className="h-16 w-full object-cover" alt={p.name}/>
+                  <div className="p-1.5">
+                    <p className="text-white text-[10px] leading-tight font-bold truncate">{p.name}</p>
+                    <p className="text-[10px]" style={{ color: accent }}>{p.price}</p>
+                  </div>
+                </button>
+              ))}
             </div>
           </div>
-        ))}
-        {catalog && catalog.length > 0 && messages.length <= 2 && (
-          <div className="grid grid-cols-3 gap-2 pt-2">
-            {catalog.slice(0, 3).map((p, i) => (
-              <div key={i} data-testid={`widget-product-${i}`} className="bg-[#2D3748] rounded-lg overflow-hidden border border-white/5">
-                <img src={p.image} className="h-16 w-full object-cover" alt={p.name}/>
-                <div className="p-1.5">
-                  <p className="text-white text-[10px] leading-tight font-bold truncate">{p.name}</p>
-                  <p className="text-[10px]" style={{ color: accent }}>{p.price}</p>
-                </div>
-              </div>
+        )}
+        {/* Smart quick-reply chips - only when idle and few messages */}
+        {!busy && messages.length <= 3 && !messages.some(m => m.buys?.length) && (
+          <div className="flex flex-wrap gap-1.5 pt-1" data-testid="widget-quickreplies">
+            {["Show me products", "Book a call", "Talk to a human"].map((q, i) => (
+              <button key={i} onClick={() => sendText(q)} data-testid={`widget-quickreply-${i}`} className="text-[11px] px-3 py-1.5 rounded-full border transition-colors hover:bg-white/[0.06]" style={{ borderColor: `${accent}44`, color: accent, background: `${accent}0d` }}>
+                {q}
+              </button>
             ))}
           </div>
         )}
       </div>
       {/* Input row */}
-      <div className="p-3 border-t border-white/5 flex gap-2 items-center">
-        {/* Voice Call toggle */}
-        {callActive ? (
-          <button data-testid="widget-endcall-btn" onClick={endCall} className="w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0" style={{ background: "#F56565", color: "#fff" }} title="End voice call">
-            <PhoneOff size={16}/>
-          </button>
-        ) : (
-          <button data-testid="widget-startcall-btn" onClick={startCall} className="w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0" style={{ background: accent, color: "#1A202C" }} title="Start hands-free voice call">
-            <PhoneCall size={16}/>
-          </button>
-        )}
-        {/* Hold-to-talk mic */}
-        <button data-testid="widget-mic-btn" onMouseDown={startRecording} onMouseUp={stopRecording} onMouseLeave={stopRecording} onTouchStart={startRecording} onTouchEnd={stopRecording} className="w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 transition-transform" style={{ background: recording ? "#F56565" : "#2D3748", color: recording ? "#fff" : accent, transform: recording ? "scale(1.1)" : "scale(1)" }} title="Hold to talk (one message)">
+      <div className="p-3 border-t border-white/5 flex gap-2 items-center" style={{ background: "rgba(255,255,255,0.02)" }}>
+        <button data-testid="widget-mic-btn" onMouseDown={startRecording} onMouseUp={stopRecording} onMouseLeave={stopRecording} onTouchStart={startRecording} onTouchEnd={stopRecording} className="w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 transition-all" style={{ background: recording ? "#F56565" : "rgba(255,255,255,0.05)", color: recording ? "#fff" : accent, transform: recording ? "scale(1.08)" : "scale(1)" }} title="Hold to talk (one voice message)">
           {recording ? <MicOff size={16}/> : <Mic size={16}/>}
         </button>
-        <input data-testid="widget-chat-input" value={input} onChange={e => setInput(e.target.value)} onKeyDown={e => e.key === "Enter" && sendText(input)} placeholder={callActive ? "Voice call active..." : recording ? "Listening..." : "Type or ask 'talk to a human'"} disabled={callActive} className="flex-1 bg-[#2D3748] text-white text-sm rounded-md px-3 py-2 outline-none border border-white/5 focus:border-[#48BB78]/50 disabled:opacity-50"/>
-        <button data-testid="widget-send-btn" onClick={() => sendText(input)} disabled={busy || callActive} className="px-3 py-2 rounded-md font-bold flex items-center justify-center disabled:opacity-50" style={{ background: accent, color: "#1A202C" }}>
-          {busy ? <Loader2 className="animate-spin" size={16}/> : <Send size={16}/>}
+        <input data-testid="widget-chat-input" value={input} onChange={e => setInput(e.target.value)} onKeyDown={e => e.key === "Enter" && sendText(input)} placeholder={recording ? "Listening..." : "Message the concierge..."} className="flex-1 bg-white/[0.04] text-white text-sm rounded-full px-4 py-2.5 outline-none border border-white/5 focus:border-[#48BB78]/50 placeholder:text-white/30 transition-colors"/>
+        <button data-testid="widget-send-btn" onClick={() => sendText(input)} disabled={busy || !input.trim()} className="w-10 h-10 rounded-full font-bold flex items-center justify-center disabled:opacity-30 transition-transform hover:scale-105 disabled:hover:scale-100 flex-shrink-0" style={{ background: accent, color: "#0D1117" }}>
+          {busy ? <Loader2 className="animate-spin" size={16}/> : <Send size={15}/>}
         </button>
+      </div>
+      <div className="px-3 pb-2 text-center">
+        <p className="text-[9px] uppercase tracking-widest text-white/25 font-bold">Powered by Rozio-Killer AI</p>
       </div>
     </div>
   );

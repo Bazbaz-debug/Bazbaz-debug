@@ -98,6 +98,20 @@ html, body, #root {
 }
 .pulse-dot { animation: pulse-ring 1.6s cubic-bezier(0.4,0,0.6,1) infinite; }
 
+/* Typing indicator dots */
+@keyframes typing-bounce {
+  0%, 60%, 100% { transform: translateY(0); opacity: 0.5; }
+  30% { transform: translateY(-4px); opacity: 1; }
+}
+.typing-dot { display: inline-block; animation: typing-bounce 1.1s ease-in-out infinite; }
+
+/* Message entrance animation */
+@keyframes msg-in {
+  0% { opacity: 0; transform: translateY(6px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+.msg-in { animation: msg-in 0.28s cubic-bezier(0.2, 0.9, 0.3, 1); }
+
 /* Scrollbars */
 ::-webkit-scrollbar { width: 8px; height: 8px; }
 ::-webkit-scrollbar-track { background: transparent; }
