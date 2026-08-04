@@ -4,7 +4,7 @@ import json
 import pytest
 import requests
 
-BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', 'https://github-static-host.preview.emergentagent.com').rstrip('/')
+BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', 'https://config-dashboard-30.preview.emergentagent.com').rstrip('/')
 
 DEMO_EMAIL = "demo@client.com"
 DEMO_PW = "Demo@12345"
