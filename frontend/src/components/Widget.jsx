@@ -349,13 +349,7 @@ export default function Widget({ tenant, colors, catalog }) {
           {/* soft accent halo behind face */}
           <div className="absolute pointer-events-none" style={{ width: "42rem", height: "42rem", borderRadius: "9999px", background: `radial-gradient(circle, ${accent}22 0%, transparent 65%)`, filter: "blur(40px)" }}></div>
           <div className={`relative w-72 h-72 rounded-full overflow-hidden mb-8 voice-halo ${callListening || speaking ? "face-speaking" : "face-alive"}`} style={{ border: `4px solid ${accent}`, boxShadow: `0 0 80px ${accent}55, 0 0 160px ${accent}22` }}>
-            <img src={avatarUrl(gender)} alt="AI" className="w-full h-full object-cover" data-face data-base-scale="1.7" style={{ objectPosition: "center 18%", transform: "scale(1.7)", transition: "transform 60ms linear, filter 60ms linear" }}/>
-            {/* Audio-reactive mouth overlay while speaking */}
-            {speaking && (
-              <div className="absolute pointer-events-none" style={{ left: "50%", bottom: "45%", width: "42px", height: "9px", transform: "translateX(-50%)" }}>
-                <div data-mouth className="w-full h-full rounded-[50%]" style={{ background: "radial-gradient(ellipse at center, rgba(20,4,8,0.85) 0%, rgba(6,1,2,0.95) 90%)", boxShadow: `inset 0 -2px 4px rgba(0,0,0,0.9), inset 0 2px 3px rgba(160,50,60,0.4)`, transformOrigin: "center center", transition: "transform 55ms linear, opacity 55ms linear", mixBlendMode: "multiply" }}></div>
-              </div>
-            )}
+            <img src={avatarUrl(gender)} alt="AI" className="w-full h-full object-cover" data-face data-base-scale="1.15" style={{ objectPosition: "center 22%", transform: "scale(1.15)", transition: "transform 60ms linear, filter 60ms linear" }}/>
           </div>
           <p className="uppercase tracking-[0.4em] text-sm font-bold mb-2 relative" style={{ color: accent }}>
             {callListening ? "LISTENING" : speaking ? "SPEAKING" : "IN CALL"}
