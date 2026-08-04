@@ -340,10 +340,6 @@ export default function Widget({ tenant, colors, catalog }) {
             <div className="w-full h-full rounded-full mouth-talk" style={{ background: "rgba(30,20,20,0.55)", boxShadow: `inset 0 -4px 6px rgba(0,0,0,0.5), 0 0 8px ${accent}55` }}></div>
           </div>
         )}
-        {false && (
-        {(speaking || callListening) && !videoUrl && (
-          <div className="absolute inset-0 pointer-events-none" style={{ boxShadow: `inset 0 0 60px 8px ${accent}55` }}></div>
-        )}
         {generatingVideo && (
           <div className="absolute inset-0 flex items-center justify-center bg-black/50 backdrop-blur-sm">
             <div className="flex items-center gap-2 text-white text-xs font-bold"><Loader2 className="animate-spin" size={14}/> Generating lip-synced video...</div>

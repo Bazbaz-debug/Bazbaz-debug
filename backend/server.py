@@ -1093,7 +1093,7 @@ async def avatar_lipsync(req: LipsyncReq):
     except Exception as e:
         logger.error(f"fal lipsync failed: {e}")
         # graceful fallback: return audio only + image
-        return {"ok": False, "error": str(e)[:120], "video_url": None, "audio_b64": b64, "gender": gender, "voice": profile["voice"], "fallback_image": profile["image"]}
+        return {"ok": False, "error": str(e)[:120], "video_url": None, "audio_b64": b64, "gender": gender, "voice": profile["voice"]}
 
 # ============= METRICS =============
 @api_router.get("/me/metrics")
