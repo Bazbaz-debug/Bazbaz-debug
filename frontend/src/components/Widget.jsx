@@ -68,17 +68,17 @@ export default function Widget({ tenant, colors, catalog }) {
 
   const playTTS = useCallback(async (text, langHint) => {
     if (!voiceMode || !text) return;
+    // CRITICAL: kill any previously-playing audio to prevent double voices
+    try { if (audioRef.current) { audioRef.current.pause(); audioRef.current.currentTime = 0; audioRef.current = null; } } catch {}
+    try { if ("speechSynthesis" in window) window.speechSynthesis.cancel(); } catch {}
     const lang = (langHint || replyLang || "en").toLowerCase();
-    // In voice-call mode use browser's built-in speechSynthesis for near-zero latency + native language voice
+    // Voice-call mode: ONLY browser speechSynthesis (native lang voice, zero latency)
     if (callActiveRef.current && "speechSynthesis" in window) {
       try {
-        window.speechSynthesis.cancel();
         const u = new SpeechSynthesisUtterance(text.slice(0, 1200));
         u.rate = 1.02; u.pitch = 1.0; u.volume = 1.0;
-        // Voice selection: prefer voice matching lang + gender
         const voices = window.speechSynthesis.getVoices();
         const g = (tenant?.avatar_gender || "female").toLowerCase();
-        // Match language first (lang code prefix like 'es', 'es-ES', 'es-MX')
         const langVoices = voices.filter(v => (v.lang || "").toLowerCase().startsWith(lang));
         const pool = langVoices.length ? langVoices : voices;
         let pick = pool.find(v =>
@@ -94,9 +94,9 @@ export default function Widget({ tenant, colors, catalog }) {
           u.onerror = () => { setSpeaking(false); resolve(); };
           window.speechSynthesis.speak(u);
         });
-      } catch {}
+      } catch { setSpeaking(false); return; }
     }
-    // Otherwise use OpenAI TTS (multi-language native, higher quality)
+    // Text-chat mode: ONLY OpenAI TTS (higher quality, multi-language native)
     try {
       const r = await fetch(`${API}/voice/tts`, {
         method: "POST", headers: {"Content-Type":"application/json"},
@@ -108,9 +108,9 @@ export default function Widget({ tenant, colors, catalog }) {
         audioRef.current = audio;
         setSpeaking(true);
         return new Promise((resolve) => {
-          audio.onended = () => { setSpeaking(false); resolve(); };
-          audio.onerror = () => { setSpeaking(false); resolve(); };
-          audio.play().catch(() => { setSpeaking(false); resolve(); });
+          audio.onended = () => { setSpeaking(false); audioRef.current = null; resolve(); };
+          audio.onerror = () => { setSpeaking(false); audioRef.current = null; resolve(); };
+          audio.play().catch(() => { setSpeaking(false); audioRef.current = null; resolve(); });
         });
       }
     } catch { setSpeaking(false); }
@@ -306,16 +306,22 @@ export default function Widget({ tenant, colors, catalog }) {
     <div data-testid="sandbox-widget" className="absolute bottom-6 right-6 w-[360px] rounded-2xl overflow-hidden shadow-2xl flex flex-col" style={{ background: bg, border: "1px solid rgba(255,255,255,0.08)", maxHeight: "82%" }}>
       {/* VOICE-ONLY FULLSCREEN OVERLAY */}
       {callActive && (
-        <div data-testid="voice-only-overlay" className="absolute inset-0 z-30 flex flex-col items-center justify-center p-6" style={{ background: `radial-gradient(circle at center, ${accent}25 0%, ${bg} 70%)` }}>
-          <div className={`w-40 h-40 rounded-full overflow-hidden mb-6 voice-halo ${callListening || speaking ? "face-speaking" : "face-alive"}`} style={{ border: `3px solid ${accent}` }}>
+        <div data-testid="voice-only-overlay" className="fixed inset-0 z-[9999] flex flex-col items-center justify-center p-6" style={{ background: `radial-gradient(circle at center, ${accent}25 0%, #0D1117 70%, #000 100%)` }}>
+          <div className={`relative w-72 h-72 rounded-full overflow-hidden mb-8 voice-halo ${callListening || speaking ? "face-speaking" : "face-alive"}`} style={{ border: `4px solid ${accent}` }}>
             <img src={avatarUrl(gender)} alt="AI" className="w-full h-full object-cover"/>
+            {/* Mouth animation overlay while speaking */}
+            {speaking && (
+              <div className="absolute left-1/2 -translate-x-1/2 pointer-events-none" style={{ bottom: "22%", width: "56px", height: "18px" }}>
+                <div className="w-full h-full rounded-full mouth-talk" style={{ background: "rgba(30,20,20,0.6)", boxShadow: `inset 0 -6px 8px rgba(0,0,0,0.5), 0 0 12px ${accent}55` }}></div>
+              </div>
+            )}
           </div>
-          <p className="uppercase tracking-[0.3em] text-xs font-bold mb-2" style={{ color: accent }}>
+          <p className="uppercase tracking-[0.4em] text-sm font-bold mb-2" style={{ color: accent }}>
             {callListening ? "LISTENING" : speaking ? "SPEAKING" : "IN CALL"}
           </p>
-          <p className="text-white/70 text-sm mb-8 text-center">Just talk — I'm listening in any language.</p>
-          <button data-testid="widget-endcall-fullscreen" onClick={endCall} className="w-16 h-16 rounded-full flex items-center justify-center shadow-2xl" style={{ background: "#F56565", color: "#fff" }}>
-            <PhoneOff size={24}/>
+          <p className="text-white/50 text-sm mb-10 text-center max-w-sm">Just talk — I'm listening in any language.</p>
+          <button data-testid="widget-endcall-fullscreen" onClick={endCall} className="w-20 h-20 rounded-full flex items-center justify-center shadow-2xl hover:scale-105 transition-transform" style={{ background: "#F56565", color: "#fff" }}>
+            <PhoneOff size={28}/>
           </button>
         </div>
       )}
@@ -328,6 +334,13 @@ export default function Widget({ tenant, colors, catalog }) {
         ) : (
           <img src={avatarUrl(gender)} alt="AI avatar" className={`w-full h-40 object-cover bg-[#2D3748] ${speaking || callListening ? "face-speaking" : "face-alive"}`} data-testid="widget-avatar-image"/>
         )}
+        {/* Mouth animation on inline avatar too */}
+        {speaking && !videoUrl && (
+          <div className="absolute left-1/2 -translate-x-1/2 pointer-events-none" style={{ bottom: "18px", width: "38px", height: "12px" }}>
+            <div className="w-full h-full rounded-full mouth-talk" style={{ background: "rgba(30,20,20,0.55)", boxShadow: `inset 0 -4px 6px rgba(0,0,0,0.5), 0 0 8px ${accent}55` }}></div>
+          </div>
+        )}
+        {false && (
         {(speaking || callListening) && !videoUrl && (
           <div className="absolute inset-0 pointer-events-none" style={{ boxShadow: `inset 0 0 60px 8px ${accent}55` }}></div>
         )}

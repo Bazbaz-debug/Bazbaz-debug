@@ -52,6 +52,16 @@ html, body, #root {
 .neon-glow { box-shadow: 0 0 24px rgba(72,187,120,0.18); }
 .neon-glow-hover:hover { box-shadow: 0 0 24px rgba(72,187,120,0.32); }
 
+/* Talking mouth animation - simulates lip movement */
+@keyframes mouth-talk {
+  0%, 100% { transform: scaleY(0.35) scaleX(0.9); }
+  20% { transform: scaleY(0.9) scaleX(1.05); }
+  40% { transform: scaleY(0.55) scaleX(0.95); }
+  60% { transform: scaleY(1) scaleX(1.1); }
+  80% { transform: scaleY(0.7) scaleX(1); }
+}
+.mouth-talk { animation: mouth-talk 0.28s ease-in-out infinite; transform-origin: center; }
+
 /* Face animations - subtle life */
 @keyframes face-breathe {
   0%, 100% { transform: scale(1); }
