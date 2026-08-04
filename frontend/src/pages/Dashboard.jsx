@@ -62,7 +62,7 @@ export default function Dashboard() {
         <header className="sticky top-0 z-30 bg-[#0B1016]/95 backdrop-blur border-b border-white/5 px-6 md:px-10 py-4 flex items-center justify-between">
           <div>
             <p className="uppercase text-[10px] tracking-[0.3em] font-bold text-[#48BB78]">Client Workspace</p>
-            <h1 className="font-display font-black text-2xl tracking-tight capitalize">{section === "knowledge" ? "Knowledge Base" : section}</h1>
+            <h1 className="font-display font-black text-2xl tracking-tight">{section === "knowledge" ? "Knowledge Base" : section.charAt(0).toUpperCase() + section.slice(1)}</h1>
           </div>
           <div className="flex items-center gap-2">
             <Button data-testid="topbar-open-preview" onClick={() => setPreviewOpen(true)} size="sm" className="bg-[#48BB78] hover:bg-[#38A169] text-[#1A202C] hover:text-white font-bold rounded-md">
@@ -215,7 +215,7 @@ function MessagesInbox({ tenantId }) {
     try {
       await api.post(`/messages/conversations/${activeId}/reply`, { text: reply.trim() });
       setReply("");
-      await loadThread(activeId);
+      await Promise.all([loadThread(activeId), loadConvs()]);
       toast.success("Reply sent — AI paused for this conversation");
     } catch { toast.error("Send failed"); }
     finally { setBusy(false); }

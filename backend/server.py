@@ -987,8 +987,12 @@ async def chat_stream(req: ChatReq):
         await db.metrics.update_one({"tenant_id": tenant_id}, {"$inc": {"chats": 1}}, upsert=True)
 
     # Persist inbound message + upsert conversation record for the Messages inbox
+    conv_status = "ai"
     if tenant_id:
         _now = now_iso()
+        existing = await db.conversations.find_one({"session_id": req.session_id, "tenant_id": tenant_id})
+        if existing:
+            conv_status = existing.get("status", "ai")
         await db.conversations.update_one(
             {"session_id": req.session_id, "tenant_id": tenant_id},
             {
@@ -999,6 +1003,15 @@ async def chat_stream(req: ChatReq):
             upsert=True,
         )
         await db.messages.insert_one({"id": str(uuid.uuid4()), "session_id": req.session_id, "tenant_id": tenant_id, "role": "user", "text": req.message, "created_at": _now})
+
+    # If the business owner has taken over this conversation, do NOT run the LLM.
+    # Emit a soft holding message so the visitor knows a human is on it.
+    if conv_status == "human":
+        async def hold_gen():
+            hold = "A team member is on this chat and will reply shortly."
+            yield f"data: {json.dumps({'delta': hold})}\n\n"
+            yield f"data: {json.dumps({'done': True})}\n\n"
+        return StreamingResponse(hold_gen(), media_type="text/event-stream")
 
     async def gen():
         acc_reply = ""
