@@ -20,10 +20,11 @@ Fix the widget preview bugs (voice call not working, uploaded logo not showing) 
 ## What's been implemented — 04 Aug 2026
 - ✅ **BUG-1** Logo now shows in widget: new `GET /api/public/logo/{tenant_id}` proxy + `resolveLogoUrl()` helper in Widget
 - ✅ **BUG-2** Voice call button now requests mic permission first + graceful fallback if SpeechRecognition unavailable
+- ✅ **Voice overlay scoped to widget** — call face now occupies only the chat box, not the whole page
 - ✅ **Sidebar layout** on `/dashboard` (Dashboard, Messages, Knowledge Base, Settings) via new `components/DashboardSidebar.jsx`
 - ✅ **Messages inbox** — chats persisted to `db.conversations` + `db.messages`; owner can view threads, send human replies, human-takeover enforced end-to-end in `/api/chat/stream`
-- ✅ **Landing revamp** — marquee pills, reviews, integrations marquee, trust logos, animated orbs
-- ✅ Backend tests: 8/8 pass (see `/app/backend/tests/test_iteration11.py`)
+- ✅ **Landing revamp** — dev banner ("In development · Not publicly available"), Book-Baazi-on-Upwork CTAs replacing Start-Trial/View-Demo, featured CEO review from Fresh N Clean Services LLC + one supporting review, marquee pills, integrations marquee
+- ✅ Backend tests: 8/8 pass · Frontend E2E: 100% (iteration_12.json)
 
 ## Prioritised backlog
 - **P1** WebSocket / SSE push for the Messages inbox (currently polls every 8s)
