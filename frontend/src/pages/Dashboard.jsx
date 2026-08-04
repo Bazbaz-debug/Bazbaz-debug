@@ -262,30 +262,177 @@ export default function Dashboard() {
 
       {/* Live Preview Modal (full-screen sandbox) */}
       <Dialog open={previewOpen} onOpenChange={setPreviewOpen}>
-        <DialogContent className="bg-[#0D1117] border-white/10 text-white max-w-6xl w-[95vw] h-[90vh] p-0 overflow-hidden flex flex-col">
+        <DialogContent className="bg-[#0D1117] border-white/10 text-white max-w-[95vw] w-[95vw] h-[92vh] p-0 overflow-hidden flex flex-col">
           <DialogHeader className="px-6 py-3 border-b border-white/10 flex-shrink-0">
-            <DialogTitle className="font-display text-xl">Live Preview &mdash; publish-ready sandbox</DialogTitle>
+            <DialogTitle className="font-display text-xl">Live Preview &mdash; test your widget on any site</DialogTitle>
           </DialogHeader>
-          <div className="relative flex-1 min-h-0 dot-grid noise overflow-hidden" data-testid="preview-modal-canvas">
-            <MouseGradient color={colors.accent_color} intensity={0.18} />
-            <div className="absolute inset-0 flex items-center justify-center p-8 pointer-events-none">
-              <div className="w-full max-w-2xl bg-[#1A202C] border border-white/10 rounded-lg p-8 opacity-90">
-                <div className="h-2 w-24 rounded bg-white/10 mb-4"></div>
-                <div className="h-10 w-3/4 rounded bg-white/10 mb-6"></div>
-                <div className="h-4 w-full rounded bg-white/5 mb-2"></div>
-                <div className="h-4 w-5/6 rounded bg-white/5 mb-2"></div>
-                <div className="h-4 w-4/6 rounded bg-white/5 mb-6"></div>
-                <div className="grid grid-cols-3 gap-3">
-                  <div className="h-32 rounded bg-white/5"></div>
-                  <div className="h-32 rounded bg-white/5"></div>
-                  <div className="h-32 rounded bg-white/5"></div>
-                </div>
-              </div>
-            </div>
-            {previewOpen && <Widget tenant={user} colors={colors} catalog={user.catalog || []}/>}
-          </div>
+          <LivePreviewSandbox
+            user={user}
+            colors={colors}
+            open={previewOpen}
+            initialUrl={user.crawled_url || user.target_domain}
+          />
         </DialogContent>
       </Dialog>
+    </div>
+  );
+}
+
+// ============ LIVE PREVIEW SANDBOX ============
+// Loads any URL inside an iframe, overlays the Widget on top. If the site blocks
+// iframing (X-Frame-Options / CSP), user can click "Load via proxy" which routes
+// through /api/preview/proxy on the backend.
+function LivePreviewSandbox({ user, colors, open, initialUrl }) {
+  const normalize = (u) => {
+    if (!u) return "";
+    let s = u.trim();
+    if (!s.startsWith("http://") && !s.startsWith("https://")) s = "https://" + s;
+    return s;
+  };
+  const [inputUrl, setInputUrl] = useState(normalize(initialUrl || ""));
+  const [loadedUrl, setLoadedUrl] = useState(normalize(initialUrl || ""));
+  const [useProxy, setUseProxy] = useState(false);
+  const [iframeError, setIframeError] = useState(false);
+  const [checking, setChecking] = useState(false);
+  const [loadKey, setLoadKey] = useState(0);
+  const backend = process.env.REACT_APP_BACKEND_URL;
+
+  const iframeSrc = loadedUrl
+    ? (useProxy ? `${backend}/api/preview/proxy?url=${encodeURIComponent(loadedUrl)}` : loadedUrl)
+    : "";
+
+  const goToUrl = () => {
+    const u = normalize(inputUrl);
+    if (!u) return;
+    setLoadedUrl(u);
+    setUseProxy(false);
+    setIframeError(false);
+    setLoadKey(k => k + 1);
+    // If nothing loads within 4s, assume iframe was blocked and offer proxy
+    setChecking(true);
+    setTimeout(() => setChecking(false), 4200);
+  };
+
+  const switchToProxy = () => {
+    setUseProxy(true);
+    setIframeError(false);
+    setLoadKey(k => k + 1);
+  };
+
+  // If the iframe onLoad fires we know we're clear
+  const onIframeLoad = () => {
+    setChecking(false);
+    setIframeError(false);
+  };
+
+  // Fallback demo sites
+  const demoSites = [
+    { label: "example.com", url: "https://example.com" },
+    { label: "en.wikipedia.org", url: "https://en.wikipedia.org/wiki/Chatbot" },
+    { label: "yourshop.com", url: "https://demo.vercel.store" },
+  ];
+
+  return (
+    <div className="flex-1 min-h-0 flex flex-col" data-testid="preview-modal-canvas">
+      {/* URL bar */}
+      <div className="px-4 py-2.5 border-b border-white/5 bg-[#1A202C] flex items-center gap-2 flex-shrink-0">
+        <div className="flex items-center gap-1 mr-1">
+          <span className="w-2.5 h-2.5 rounded-full bg-[#F56565]"></span>
+          <span className="w-2.5 h-2.5 rounded-full bg-[#ED8936]"></span>
+          <span className="w-2.5 h-2.5 rounded-full bg-[#48BB78]"></span>
+        </div>
+        <Input
+          data-testid="preview-url-input"
+          value={inputUrl}
+          onChange={e => setInputUrl(e.target.value)}
+          onKeyDown={e => e.key === "Enter" && goToUrl()}
+          placeholder="Paste any website URL — e.g. https://yourshop.com"
+          className="flex-1 bg-[#0D1117] border-white/10 text-white h-9 text-sm rounded-full px-4"
+        />
+        <Button
+          data-testid="preview-load-btn"
+          onClick={goToUrl}
+          size="sm"
+          className="bg-[#48BB78] hover:bg-[#38A169] text-[#1A202C] hover:text-white font-bold rounded-full h-9 px-4"
+        >
+          Load
+        </Button>
+        {loadedUrl && (
+          <Button
+            data-testid="preview-proxy-btn"
+            onClick={switchToProxy}
+            disabled={useProxy}
+            variant="outline"
+            size="sm"
+            className="border-white/10 bg-transparent text-white hover:bg-white/5 h-9 rounded-full text-xs disabled:opacity-40"
+            title="Reload via our server proxy (helps for sites that block iframes)"
+          >
+            {useProxy ? "Proxied" : "Load via proxy"}
+          </Button>
+        )}
+      </div>
+
+      {/* Site iframe + widget overlay */}
+      <div className="relative flex-1 min-h-0 bg-[#0D1117]">
+        {!loadedUrl ? (
+          <div className="absolute inset-0 flex items-center justify-center p-8">
+            <div className="text-center max-w-md">
+              <div className="w-14 h-14 rounded-2xl bg-[#48BB78]/10 border border-[#48BB78]/30 text-[#48BB78] flex items-center justify-center mx-auto mb-4">
+                <Maximize2 size={24}/>
+              </div>
+              <h3 className="font-display font-black text-2xl mb-2">Preview on any real website</h3>
+              <p className="text-[#A0AEC0] text-sm mb-5">Paste a URL above &mdash; your storefront, your landing page, any competitor. We&rsquo;ll load it here with your chat widget overlaid so you see exactly how visitors will experience it.</p>
+              <div className="flex flex-wrap gap-2 justify-center">
+                {demoSites.map(s => (
+                  <button
+                    key={s.url}
+                    data-testid={`preview-demo-${s.label}`}
+                    onClick={() => { setInputUrl(s.url); setLoadedUrl(s.url); setUseProxy(false); setLoadKey(k=>k+1); setChecking(true); setTimeout(()=>setChecking(false),4200); }}
+                    className="text-xs font-bold px-3 py-2 rounded-full border border-white/10 bg-white/5 text-white hover:bg-white/10 hover:border-[#48BB78]/40"
+                  >
+                    Try {s.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        ) : (
+          <>
+            <iframe
+              key={loadKey}
+              data-testid="preview-iframe"
+              src={iframeSrc}
+              title="Live preview"
+              className="absolute inset-0 w-full h-full border-0 bg-white"
+              onLoad={onIframeLoad}
+              onError={() => setIframeError(true)}
+              sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox"
+              referrerPolicy="no-referrer"
+            />
+            {/* Loading hint while checking */}
+            {checking && !useProxy && (
+              <div className="absolute top-3 left-1/2 -translate-x-1/2 bg-[#1A202C] border border-white/10 rounded-full px-4 py-1.5 text-xs text-[#A0AEC0] shadow-lg z-10">
+                Loading&hellip; If nothing appears, the site blocked embedding &rarr; click <b className="text-[#48BB78]">Load via proxy</b>
+              </div>
+            )}
+          </>
+        )}
+
+        {/* Widget always overlaid when modal is open */}
+        {open && <Widget tenant={user} colors={colors} catalog={user.catalog || []}/>}
+      </div>
+
+      {/* Footer status */}
+      <div className="px-4 py-2 border-t border-white/5 bg-[#1A202C] flex items-center justify-between text-xs flex-shrink-0">
+        <p className="text-[#A0AEC0]">
+          {loadedUrl ? (
+            <>Previewing: <b className="text-white">{loadedUrl}</b> {useProxy && <span className="text-[#48BB78]">(via server proxy)</span>}</>
+          ) : (
+            "Enter any URL to see your widget on a real site"
+          )}
+        </p>
+        <p className="text-[#48BB78] font-bold">Chat is live &mdash; try it &rarr;</p>
+      </div>
     </div>
   );
 }

@@ -32,7 +32,7 @@ function extractActions(text) {
   return { clean, actions, lang, buys };
 }
 
-export default function Widget({ tenant, colors, catalog }) {
+export default function Widget({ tenant, colors, catalog, embedded = false, onClose }) {
   const bg = colors?.widget_bg || "#1A202C";
   const bubble = colors?.bubble_color || "#48BB78";
   const accent = colors?.accent_color || "#48BB78";
@@ -341,8 +341,22 @@ export default function Widget({ tenant, colors, catalog }) {
     );
   }
 
+  const closeWidget = () => {
+    if (embedded && onClose) { onClose(); return; }
+    setOpen(false);
+  };
+
+  // Positioning: absolute inside a relative parent for the sandbox preview,
+  // full-frame inset when rendered inside the customer's iframe embed.
+  const containerClass = embedded
+    ? "fixed inset-0 sm:inset-auto sm:bottom-4 sm:right-4 sm:left-4 sm:top-4 w-auto sm:w-[calc(100vw-2rem)] sm:max-w-[400px] sm:h-[calc(100vh-2rem)] sm:max-h-[720px] rounded-none sm:rounded-3xl overflow-hidden shadow-2xl flex flex-col mx-auto"
+    : "absolute bottom-6 right-6 w-[360px] rounded-2xl overflow-hidden shadow-2xl flex flex-col";
+  const containerStyle = embedded
+    ? { background: bg, border: "1px solid rgba(255,255,255,0.08)" }
+    : { background: bg, border: "1px solid rgba(255,255,255,0.08)", maxHeight: "82%" };
+
   return (
-    <div data-testid="sandbox-widget" className="absolute bottom-6 right-6 w-[360px] rounded-2xl overflow-hidden shadow-2xl flex flex-col" style={{ background: bg, border: "1px solid rgba(255,255,255,0.08)", maxHeight: "82%" }}>
+    <div data-testid="sandbox-widget" className={containerClass} style={containerStyle}>
       {/* VOICE-ONLY FULLSCREEN OVERLAY — blurred background, only the face is in focus */}
       {callActive && (
         <div data-testid="voice-only-overlay" className="fixed inset-0 z-[9999] flex flex-col items-center justify-center p-6" style={{ background: "rgba(6, 10, 14, 0.85)", backdropFilter: "blur(28px) saturate(140%)", WebkitBackdropFilter: "blur(28px) saturate(140%)" }}>
@@ -360,38 +374,59 @@ export default function Widget({ tenant, colors, catalog }) {
           </button>
         </div>
       )}
-      {/* Chat mode: sleek header (no face) */}
-      <div className="px-4 py-3 flex items-center gap-3 border-b border-white/5" style={{ background: "linear-gradient(180deg, rgba(255,255,255,0.03) 0%, transparent 100%)" }}>
-        {tenant?.logo_url ? (
-          <div className="relative w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 overflow-hidden bg-white/5 border border-white/10" data-testid="widget-logo">
-            <img src={tenant.logo_url} alt="logo" className="w-full h-full object-contain"/>
-            <span className="absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2" style={{ background: "#48BB78", borderColor: bg }}></span>
+      {/* Chat mode: premium header with hero gradient */}
+      <div className="relative px-5 pt-4 pb-5 border-b border-white/5 overflow-hidden" style={{ background: `linear-gradient(160deg, ${accent}26 0%, ${accent}0a 40%, transparent 100%)` }}>
+        {/* Ambient glow behind header */}
+        <div className="absolute -top-16 -right-10 w-48 h-48 rounded-full pointer-events-none" style={{ background: `radial-gradient(circle, ${accent}44 0%, transparent 60%)`, filter: "blur(24px)" }}></div>
+        <div className="relative flex items-center gap-3">
+          {tenant?.logo_url ? (
+            <div className="relative w-11 h-11 rounded-2xl flex items-center justify-center flex-shrink-0 overflow-hidden bg-white/8 border border-white/15" data-testid="widget-logo" style={{ boxShadow: `0 4px 16px ${accent}33` }}>
+              <img src={tenant.logo_url} alt="logo" className="w-full h-full object-contain"/>
+              <span className="absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2" style={{ background: "#48BB78", borderColor: bg }}></span>
+            </div>
+          ) : (
+            <div className="relative w-11 h-11 rounded-2xl flex items-center justify-center flex-shrink-0" style={{ background: `linear-gradient(135deg, ${accent}, ${accent}77)`, boxShadow: `0 4px 20px ${accent}66` }}>
+              <Sparkles size={18} className="text-[#0D1117]"/>
+              <span className="absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 pulse-dot" style={{ background: "#48BB78", borderColor: bg }}></span>
+            </div>
+          )}
+          <div className="flex-1 min-w-0">
+            <p className="text-white text-[15px] font-bold leading-tight truncate">{tenant?.bot_name || tenant?.full_name || "AI Concierge"}</p>
+            <div className="flex items-center gap-1.5 mt-0.5">
+              <span className="w-1.5 h-1.5 rounded-full" style={{ background: "#48BB78" }}></span>
+              <p className="text-white/60 text-[11px] leading-tight truncate">{tenant?.bot_tagline || "Online · replies instantly"}</p>
+            </div>
           </div>
-        ) : (
-          <div className="relative w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0" style={{ background: `linear-gradient(135deg, ${accent}, ${accent}88)` }}>
-            <Sparkles size={16} className="text-[#0D1117]"/>
-            <span className="absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2" style={{ background: "#48BB78", borderColor: bg }}></span>
+          <button data-testid="widget-startcall-btn" onClick={startCall} title="Start face-to-face voice call" className="w-9 h-9 rounded-full flex items-center justify-center transition-all hover:scale-105" style={{ background: `${accent}22`, color: accent, border: `1px solid ${accent}55` }}>
+            <PhoneCall size={14}/>
+          </button>
+          <button data-testid="widget-close-btn" onClick={closeWidget} className="w-9 h-9 rounded-full flex items-center justify-center text-white/60 hover:text-white hover:bg-white/10 transition-colors">
+            <X size={16}/>
+          </button>
+        </div>
+        {/* Hero greeting line - only when it's a fresh conversation */}
+        {messages.length <= 1 && (
+          <div className="relative mt-4">
+            <p className="text-white text-xl font-black leading-tight tracking-tight" data-testid="widget-hero-greeting">
+              Hi there! &#128075;
+            </p>
+            <p className="text-white/70 text-sm mt-1 leading-snug">How can we help you today?</p>
           </div>
         )}
-        <div className="flex-1 min-w-0">
-          <p className="text-white text-sm font-bold leading-tight truncate">{tenant?.bot_name || tenant?.full_name || "AI Concierge"}</p>
-          <p className="text-white/50 text-[11px] leading-tight truncate">{tenant?.bot_tagline || "Online · replies instantly"}</p>
-        </div>
-        <button data-testid="widget-startcall-btn" onClick={startCall} title="Start face-to-face voice call" className="w-9 h-9 rounded-full flex items-center justify-center transition-transform hover:scale-105" style={{ background: `${accent}18`, color: accent, border: `1px solid ${accent}44` }}>
-          <PhoneCall size={15}/>
-        </button>
-        <button data-testid="widget-close-btn" onClick={() => setOpen(false)} className="w-9 h-9 rounded-full flex items-center justify-center text-white/60 hover:text-white hover:bg-white/5 transition-colors">
-          <X size={16}/>
-        </button>
       </div>
       {/* Messages */}
-      <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-4 space-y-3" style={{ maxHeight: 380, background: "radial-gradient(circle at 50% 0%, rgba(72,187,120,0.04) 0%, transparent 60%)" }}>
+      <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-4 space-y-3 rk-scroll" style={{ maxHeight: embedded ? undefined : 380, background: `radial-gradient(circle at 50% 0%, ${accent}0a 0%, transparent 55%)` }}>
         {messages.map((m, i) => {
           const isUser = m.role === "user";
           const isEmpty = !m.text;
           return (
             <div key={i} className={`flex ${isUser ? "justify-end" : "justify-start"} msg-in`}>
-              <div className={`max-w-[85%] px-3.5 py-2.5 text-[13px] leading-relaxed shadow-sm ${isUser ? "rounded-2xl rounded-br-md" : "rounded-2xl rounded-bl-md"}`} style={isUser ? { background: `linear-gradient(135deg, ${bubble}, ${bubble}dd)`, color: "#0D1117" } : { background: "rgba(255,255,255,0.06)", color: "#fff", border: "1px solid rgba(255,255,255,0.06)" }}>
+              {!isUser && (
+                <div className="w-7 h-7 rounded-full flex-shrink-0 mr-2 flex items-center justify-center self-end" style={{ background: `linear-gradient(135deg, ${accent}, ${accent}77)`, boxShadow: `0 2px 8px ${accent}44` }}>
+                  <Sparkles size={12} className="text-[#0D1117]"/>
+                </div>
+              )}
+              <div className={`max-w-[80%] px-4 py-2.5 text-[13.5px] leading-relaxed ${isUser ? "rounded-[18px] rounded-br-[4px]" : "rounded-[18px] rounded-bl-[4px]"}`} style={isUser ? { background: `linear-gradient(135deg, ${bubble}, ${bubble}dd)`, color: "#0D1117", boxShadow: `0 6px 20px ${bubble}33` } : { background: "rgba(255,255,255,0.055)", color: "#fff", border: "1px solid rgba(255,255,255,0.08)", backdropFilter: "blur(8px)", boxShadow: "0 4px 16px rgba(0,0,0,0.15)" }}>
                 {isEmpty && !isUser ? (
                   <div className="flex items-center gap-1 py-1" data-testid="widget-typing">
                     <span className="w-1.5 h-1.5 rounded-full typing-dot" style={{ background: accent, animationDelay: "0ms" }}></span>
@@ -423,7 +458,7 @@ export default function Widget({ tenant, colors, catalog }) {
             <div className="grid grid-cols-3 gap-2">
               {catalog.slice(0, 3).map((p, i) => (
                 <button key={i} data-testid={`widget-product-${i}`} onClick={() => sendText(`Tell me about the ${p.name}`)} className="text-left bg-white/[0.04] hover:bg-white/[0.08] rounded-xl overflow-hidden border border-white/5 transition-colors">
-                  <img src={p.image} className="h-16 w-full object-cover" alt={p.name}/>
+                  {p.image && <img src={p.image} className="h-16 w-full object-cover" alt={p.name}/>}
                   <div className="p-1.5">
                     <p className="text-white text-[10px] leading-tight font-bold truncate">{p.name}</p>
                     <p className="text-[10px]" style={{ color: accent }}>{p.price}</p>
@@ -433,12 +468,23 @@ export default function Widget({ tenant, colors, catalog }) {
             </div>
           </div>
         )}
-        {/* Smart quick-reply chips - only when idle and few messages */}
-        {!busy && messages.length <= 3 && !messages.some(m => m.buys?.length) && (
-          <div className="flex flex-wrap gap-1.5 pt-1" data-testid="widget-quickreplies">
-            {["Show me products", "Book a call", "Talk to a human"].map((q, i) => (
-              <button key={i} onClick={() => sendText(q)} data-testid={`widget-quickreply-${i}`} className="text-[11px] px-3 py-1.5 rounded-full border transition-colors hover:bg-white/[0.06]" style={{ borderColor: `${accent}44`, color: accent, background: `${accent}0d` }}>
-                {q}
+        {/* Suggested action cards - Intercom Fin style, only shown on greeting */}
+        {!busy && messages.length <= 2 && !messages.some(m => m.buys?.length) && (
+          <div className="pt-2 space-y-2" data-testid="widget-quickreplies">
+            {[
+              "Show me your products",
+              "Book a call with the team",
+              "Talk to a human",
+            ].map((label, i) => (
+              <button
+                key={i}
+                onClick={() => sendText(label)}
+                data-testid={`widget-quickreply-${i}`}
+                className="w-full text-left text-[13px] px-4 py-3 rounded-2xl border transition-all hover:bg-white/[0.06] hover:border-white/20 group flex items-center justify-between"
+                style={{ borderColor: "rgba(255,255,255,0.08)", background: "rgba(255,255,255,0.03)", color: "#fff" }}
+              >
+                <span className="font-medium">{label}</span>
+                <span className="text-lg opacity-40 group-hover:opacity-100 group-hover:translate-x-0.5 transition-all" style={{ color: accent }}>&rarr;</span>
               </button>
             ))}
           </div>

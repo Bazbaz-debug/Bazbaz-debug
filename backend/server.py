@@ -542,6 +542,99 @@ async def get_public_settings():
         "upload_policy": s.get("upload_policy", "client_self_serve") if s else "client_self_serve",
     }
 
+@api_router.get("/public/tenant/{tenant_id}")
+async def public_tenant(tenant_id: str):
+    """Return SAFE tenant config for the embeddable widget. No auth required.
+    Only exposes public-facing fields: bot identity, colors, catalog, greeting.
+    Never returns email, phone, API keys, PDF contents, business hours, etc."""
+    t = await db.users.find_one({"id": tenant_id, "active": True}, {"_id": 0})
+    if not t:
+        raise HTTPException(404, "Widget disabled or tenant not found")
+    return {
+        "id": t["id"],
+        "full_name": t.get("full_name") or "AI Concierge",
+        "bot_name": t.get("bot_name") or "",
+        "bot_tagline": t.get("bot_tagline") or "",
+        "bot_greeting": t.get("bot_greeting") or "Hi! How can I help you today?",
+        "bot_tone": t.get("bot_tone") or "friendly",
+        "logo_url": t.get("logo_url") or "",
+        "widget_bg": t.get("widget_bg") or "#1A202C",
+        "bubble_color": t.get("bubble_color") or "#48BB78",
+        "accent_color": t.get("accent_color") or "#48BB78",
+        "avatar_gender": t.get("avatar_gender") or "female",
+        "avatar_background": t.get("avatar_background") or "studio_dark",
+        "catalog": (t.get("catalog") or [])[:8],
+        "industry": t.get("industry") or "General Website",
+    }
+
+@api_router.get("/preview/proxy")
+async def preview_proxy(url: str = Query(..., description="Full https URL to fetch and proxy for the live sandbox")):
+    """Server-side fetch of a public URL so the live sandbox can embed sites that
+    block iframes via X-Frame-Options / CSP. Rewrites <base> so relative asset
+    URLs still resolve, strips frame-blocking headers, and injects a small
+    banner so users know they're viewing a proxied preview."""
+    import httpx
+    from urllib.parse import urlparse, urljoin
+    if not url.startswith(("http://", "https://")):
+        raise HTTPException(400, "URL must start with http(s)://")
+    parsed = urlparse(url)
+    if not parsed.netloc:
+        raise HTTPException(400, "Invalid URL")
+    try:
+        async with httpx.AsyncClient(timeout=15.0, follow_redirects=True, headers={
+            "User-Agent": "Mozilla/5.0 (compatible; RozioKillerPreview/1.0)",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        }) as client:
+            resp = await client.get(url)
+        content_type = resp.headers.get("content-type", "text/html")
+        # If it's not HTML, just return a placeholder page so the iframe doesn't fail hard
+        if "html" not in content_type.lower():
+            return Response(
+                content=f"<html><body style='font-family:sans-serif;padding:40px;background:#1A202C;color:#fff'><h2>Non-HTML content ({content_type})</h2><p>{url}</p></body></html>",
+                media_type="text/html",
+            )
+        html = resp.text
+        base_url = f"{parsed.scheme}://{parsed.netloc}"
+        # Ensure <base> tag so relative URLs resolve to the ORIGIN (not our proxy)
+        base_tag = f'<base href="{base_url}/">'
+        if "<head" in html.lower():
+            # Insert right after opening <head ...>
+            import re as _re
+            html = _re.sub(r"(<head[^>]*>)", r"\1" + base_tag, html, count=1, flags=_re.IGNORECASE)
+        else:
+            html = base_tag + html
+        # Inject a small preview banner so users know
+        banner = (
+            "<div style='position:fixed;top:0;left:0;right:0;z-index:2147483646;"
+            "background:linear-gradient(90deg,#48BB78,#38A169);color:#0D1117;"
+            "padding:6px 14px;font:600 12px/1.4 system-ui,sans-serif;"
+            "text-align:center;box-shadow:0 2px 12px rgba(0,0,0,.25)'>"
+            "&#10024; Rozio-Killer Live Sandbox &middot; proxied preview of "
+            f"<b>{parsed.netloc}</b> &middot; the widget appears below-right</div>"
+            "<div style='height:32px'></div>"
+        )
+        if "<body" in html.lower():
+            import re as _re
+            html = _re.sub(r"(<body[^>]*>)", r"\1" + banner, html, count=1, flags=_re.IGNORECASE)
+        else:
+            html = banner + html
+        # Strip meta CSP that could block our banner/iframe context
+        import re as _re
+        html = _re.sub(
+            r'<meta[^>]+http-equiv=["\']?content-security-policy["\']?[^>]*>',
+            "", html, flags=_re.IGNORECASE,
+        )
+        # Return WITHOUT copying X-Frame-Options or CSP so our iframe can render
+        return Response(content=html, media_type="text/html; charset=utf-8")
+    except httpx.HTTPError as e:
+        return Response(
+            content=f"<html><body style='font-family:sans-serif;padding:40px;background:#1A202C;color:#fff'>"
+                    f"<h2 style='color:#F56565'>Could not load preview</h2>"
+                    f"<p style='color:#A0AEC0'>{url}</p>"
+                    f"<p style='color:#A0AEC0;font-size:12px'>{str(e)[:200]}</p></body></html>",
+            media_type="text/html", status_code=200,
+        )
+
 @api_router.post("/auth/register")
 async def register(req: RegisterReq):
     s = await db.settings.find_one({"id": "app_settings"}, {"_id": 0})
@@ -1467,32 +1560,73 @@ async def embed_loader(tenant_id: str):
     tenant = await db.users.find_one({"id": tenant_id, "active": True}, {"_id": 0})
     if not tenant:
         return Response(content="console.warn('[Rozio-Killer] widget disabled - account inactive or missing');", media_type="application/javascript")
-    frontend_url = os.environ.get("FRONTEND_URL", "").rstrip("/") or "https://shopify-bot-chat-fix.preview.emergentagent.com"
+    frontend_url = os.environ.get("FRONTEND_URL", "").rstrip("/") or "https://f9451381-d54a-489c-93b4-9d7111028a97.preview.emergentagent.com"
     bg = tenant.get("widget_bg", "#1A202C")
     bubble = tenant.get("bubble_color", "#48BB78")
     accent = tenant.get("accent_color", "#48BB78")
+    bot_name = (tenant.get("bot_name") or tenant.get("full_name") or "AI Concierge").replace('"', '\\"')
     js = f"""
 (function(){{
   if(window.__RozioKillerLoaded) return; window.__RozioKillerLoaded=true;
-  var TENANT="{tenant_id}", API="{frontend_url}/api";
-  var BG="{bg}", BUBBLE="{bubble}", ACCENT="{accent}";
+  var TENANT="{tenant_id}", ORIGIN="{frontend_url}";
+  var BG="{bg}", BUBBLE="{bubble}", ACCENT="{accent}", NAME="{bot_name}";
+  var IS_MOBILE = window.matchMedia && window.matchMedia('(max-width: 640px)').matches;
+
+  // Inject minimal keyframes so the launcher pulses subtly
+  var st = document.createElement('style');
+  st.textContent = '@keyframes rk-pulse{{0%,100%{{box-shadow:0 8px 32px rgba(0,0,0,.35),0 0 0 0 '+ACCENT+'66}}50%{{box-shadow:0 8px 32px rgba(0,0,0,.35),0 0 0 14px '+ACCENT+'00}}}}@keyframes rk-fade-up{{from{{opacity:0;transform:translateY(12px)}}to{{opacity:1;transform:translateY(0)}}}}';
+  document.head.appendChild(st);
+
+  // Wrapper container so we can add the launcher + optional teaser bubble
+  var wrap = document.createElement('div');
+  wrap.setAttribute('id', 'rk-widget-root');
+  wrap.style.cssText = 'position:fixed;bottom:20px;right:20px;z-index:2147483647;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif;';
+  document.body.appendChild(wrap);
+
+  // Launcher button
   var launcher=document.createElement('button');
   launcher.setAttribute('data-testid','rk-embed-launcher');
-  launcher.style.cssText="position:fixed;bottom:24px;right:24px;width:56px;height:56px;border-radius:50%;background:"+ACCENT+";color:"+BG+";border:none;box-shadow:0 8px 32px rgba(0,0,0,.35);cursor:pointer;font-family:sans-serif;font-weight:800;font-size:22px;z-index:2147483647";
-  launcher.innerHTML='&#9679;';
+  launcher.setAttribute('aria-label','Open chat');
+  launcher.style.cssText="width:60px;height:60px;border-radius:50%;background:linear-gradient(135deg,"+ACCENT+","+ACCENT+"cc);color:#0D1117;border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:transform .2s ease;animation:rk-pulse 2.4s ease-in-out infinite";
+  launcher.innerHTML = '<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>';
+  launcher.onmouseenter = function(){{ launcher.style.transform='scale(1.06)'; }};
+  launcher.onmouseleave = function(){{ launcher.style.transform='scale(1)'; }};
+  wrap.appendChild(launcher);
+
+  // Teaser message that appears after 2s
+  var teaser = document.createElement('div');
+  teaser.style.cssText = 'position:absolute;bottom:72px;right:0;background:#fff;color:#111;padding:10px 14px;border-radius:14px;border-bottom-right-radius:4px;box-shadow:0 12px 32px rgba(0,0,0,.18);font-size:13px;font-weight:500;max-width:230px;line-height:1.35;opacity:0;transform:translateY(6px);transition:opacity .3s,transform .3s;cursor:pointer;';
+  teaser.textContent = '&#128075; Hi! Ask me anything about ' + NAME.split(' ')[0];
+  teaser.innerHTML = '&#128075; Hi! I can help &mdash; ask me anything.';
+  teaser.onclick = function(){{ launcher.click(); }};
+  wrap.appendChild(teaser);
+  setTimeout(function(){{ if(!frame){{ teaser.style.opacity='1'; teaser.style.transform='translateY(0)'; }} }}, 1800);
+  setTimeout(function(){{ teaser.style.opacity='0'; teaser.style.transform='translateY(6px)'; setTimeout(function(){{try{{teaser.remove();}}catch(e){{}}}}, 400); }}, 12000);
+
   var frame=null;
   launcher.onclick=function(){{
-    if(frame){{frame.remove();frame=null;launcher.innerHTML='&#9679;';return;}}
+    if(frame){{frame.remove();frame=null;launcher.innerHTML='<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>';return;}}
+    try{{ teaser.remove(); }}catch(e){{}}
     frame=document.createElement('iframe');
-    frame.src=API.replace('/api','')+'/embed-widget?tenant='+TENANT;
-    frame.style.cssText="position:fixed;bottom:96px;right:24px;width:380px;height:600px;border:none;border-radius:16px;box-shadow:0 20px 60px rgba(0,0,0,.5);z-index:2147483647;background:"+BG;
+    frame.setAttribute('title','AI Concierge Chat');
+    frame.setAttribute('allow','microphone; autoplay; clipboard-write');
+    frame.src=ORIGIN+'/embed-widget?tenant='+TENANT;
+    if (IS_MOBILE) {{
+      frame.style.cssText="position:fixed;inset:0;width:100vw;height:100vh;border:none;z-index:2147483647;background:"+BG;
+    }} else {{
+      frame.style.cssText="position:fixed;bottom:96px;right:20px;width:400px;height:640px;max-height:calc(100vh - 120px);border:none;border-radius:20px;box-shadow:0 24px 72px rgba(0,0,0,.5);z-index:2147483647;background:"+BG+";animation:rk-fade-up .28s cubic-bezier(.2,.9,.3,1)";
+    }}
     document.body.appendChild(frame);
-    launcher.innerHTML='&times;';
+    launcher.innerHTML='<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg>';
   }};
-  document.body.appendChild(launcher);
+
+  // Listen for close message from iframe
+  window.addEventListener('message', function(e){{
+    if (e && e.data && e.data.type === 'rk:close' && frame) {{ frame.remove(); frame=null; launcher.innerHTML='<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>'; }}
+  }});
 }})();
 """
-    return Response(content=js, media_type="application/javascript")
+    return Response(content=js, media_type="application/javascript", headers={"Cache-Control": "public, max-age=60"})
 
 app.include_router(api_router)
 

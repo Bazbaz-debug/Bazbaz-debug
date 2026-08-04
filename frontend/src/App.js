@@ -9,6 +9,7 @@ import ForgotPassword from "@/pages/ForgotPassword";
 import Dashboard from "@/pages/Dashboard";
 import Admin from "@/pages/Admin";
 import SetupGuides from "@/pages/SetupGuides";
+import EmbedWidget from "@/pages/EmbedWidget";
 import "@/App.css";
 
 function Protected({ children, admin }) {
@@ -31,6 +32,7 @@ function App() {
           <Route path="/dashboard" element={<Protected><Dashboard /></Protected>} />
           <Route path="/admin" element={<Protected admin><Admin /></Protected>} />
           <Route path="/setup" element={<Protected><SetupGuides /></Protected>} />
+          <Route path="/embed-widget" element={<EmbedWidget />} />
         </Routes>
       </BrowserRouter>
       <Toaster theme="dark" position="top-right" />

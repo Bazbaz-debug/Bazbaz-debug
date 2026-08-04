@@ -171,6 +171,107 @@ backend:
           are set (even with empty TWILIO_AUTH_TOKEN). The _twilio_client() helper
           properly supports API Key authentication as fallback to Auth Token.
 
+  - task: "Public tenant endpoint for iframe embed (GET /api/public/tenant/{id})"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: |
+          Added GET /api/public/tenant/{tenant_id} (no auth) that returns only
+          the safe subset of fields needed by the widget: bot_name, bot_tagline,
+          bot_greeting, bot_tone, logo_url, widget_bg, bubble_color,
+          accent_color, avatar_gender, catalog (max 8), industry. Returns 404
+          when tenant is inactive or missing. Password, email, phone, API keys,
+          business hours, PDF contents are NEVER exposed.
+      - working: true
+        agent: "testing"
+        comment: |
+          ✅ ALL TESTS PASSED (2/2):
+          1. GET /api/public/tenant/{demo_id} (unauthenticated) → 200 with all required safe fields:
+             id, full_name, bot_name, bot_tagline, bot_greeting, bot_tone, logo_url,
+             widget_bg, bubble_color, accent_color, avatar_gender, avatar_background,
+             catalog, industry.
+          2. Verified NO sensitive fields exposed: password, email, phone, resend_api_key,
+             google_api_key, custom_smtp_pass, custom_smtp_host, custom_smtp_user,
+             business_hours, blocked_slots, business_owner_phone, notification_email,
+             zoom_meeting_link.
+          3. GET /api/public/tenant/does-not-exist-xyz → 404 as expected.
+          
+          Public tenant endpoint working correctly and securely.
+
+  - task: "Live sandbox preview proxy (GET /api/preview/proxy?url=)"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: |
+          Server-side fetch that lets the dashboard's Live Preview sandbox embed
+          real websites that block iframing via X-Frame-Options / CSP. Fetches
+          the target URL via httpx, injects <base href> so relative asset URLs
+          resolve back to the origin, prepends a "Live Sandbox" banner, strips
+          meta CSP tags, and returns the HTML WITHOUT copying X-Frame-Options
+          or CSP headers so our iframe renders. Validates http/https scheme.
+          Gracefully returns a 200 HTML error page if the fetch fails.
+      - working: true
+        agent: "testing"
+        comment: |
+          ✅ ALL TESTS PASSED (3/3):
+          1. GET /api/preview/proxy?url=https://example.com → 200 with text/html
+          2. Verified <base href="https://example.com/"> tag injected correctly
+          3. Verified "Rozio-Killer Live Sandbox" banner text present in HTML
+          4. Verified NO x-frame-options header in response (case-insensitive check)
+          5. Verified NO restrictive content-security-policy with frame-ancestors
+          6. GET /api/preview/proxy?url=ftp://foo → 400 (invalid scheme rejected)
+          7. GET /api/preview/proxy?url=https://this-domain-definitely-does-not-exist-abc123.tld
+             → 200 with fallback HTML containing "Could not load preview" (not 500)
+          
+          Preview proxy working correctly with proper security header handling.
+
+  - task: "Embed loader.js — premium launcher + working iframe route"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: |
+          Fixed the Shopify embed which was previously loading a blank iframe
+          (route /embed-widget did not exist). Loader now:
+          • Renders a top-tier launcher with a chat SVG icon, subtle
+            gradient/pulse animation, hover scale, and teaser message that
+            appears after 1.8s then auto-dismisses at 12s.
+          • Iframe still points at ORIGIN/embed-widget?tenant=<id>, but now
+            that route exists (see frontend task).
+          • Mobile: iframe is full-screen; desktop: 400x640 rounded card.
+          • Iframe now has allow="microphone; autoplay; clipboard-write".
+          • Listens for postMessage {type:'rk:close'} from the widget so the
+            "X" inside the iframe collapses the iframe on the parent page.
+          • Fallback FRONTEND_URL corrected to the current preview host.
+      - working: true
+        agent: "testing"
+        comment: |
+          ✅ ALL TESTS PASSED (1/1):
+          1. GET /api/embed/{demo_id}/loader.js → 200 with application/javascript
+          2. Verified content-type header is application/javascript
+          3. Verified iframe path contains "/embed-widget?tenant=" (correct route)
+          4. Verified postMessage close hook contains "rk:close" (iframe close functionality)
+          5. Verified mobile detection code contains "IS_MOBILE" (responsive behavior)
+          
+          Embed loader.js working correctly with all required functionality.
+
 frontend:
   - task: "Admin Manage-Client modal (Profile / Website+Files / Integrations / Metrics tabs)"
     implemented: true
@@ -194,12 +295,14 @@ frontend:
 
 metadata:
   created_by: "main_agent"
-  version: "1.1"
-  test_sequence: 1
+  version: "1.2"
+  test_sequence: 2
   run_ui: false
 
 test_plan:
-  current_focus: []
+  current_focus:
+    - "Public tenant endpoint + preview proxy (backend)"
+    - "Embed loader.js updated launcher/iframe (backend)"
   stuck_tasks: []
   test_all: false
   test_priority: "high_first"
@@ -226,20 +329,65 @@ agent_communication:
   - agent: "testing"
     message: |
       ✅ BACKEND TESTING COMPLETE - ALL TESTS PASSED (8/8)
+      Both backend tasks verified and working correctly.
+  - agent: "main"
+    message: |
+      New backend endpoints to verify (for the Shopify embed + Live Sandbox fix):
+
+      A. GET /api/public/tenant/{tenant_id}
+         1. Fetch demo client id via admin login → GET /api/admin/users.
+         2. GET /api/public/tenant/{demo_id} WITHOUT auth → 200 with keys:
+            id, full_name, bot_name, bot_tagline, bot_greeting, bot_tone,
+            logo_url, widget_bg, bubble_color, accent_color, avatar_gender,
+            avatar_background, catalog (list), industry.
+         3. Response MUST NOT contain: password, email, phone, api key,
+            resend, google_api_key, custom_smtp, business_hours,
+            blocked_slots, active_slots.
+         4. GET /api/public/tenant/does-not-exist → 404.
+
+      B. GET /api/preview/proxy?url=https://example.com
+         1. Status 200, content-type text/html.
+         2. Body contains "<base href=" (base tag was injected).
+         3. Body contains "Rozio-Killer Live Sandbox" (banner injected).
+         4. Response headers must NOT contain x-frame-options or a
+            content-security-policy that would block framing.
+         5. GET /api/preview/proxy?url=ftp://bad → 400.
+         6. GET /api/preview/proxy?url=https://this-domain-def-does-not-exist-abc.tld
+            → 200 with fallback error HTML (not 500).
+
+      C. GET /api/embed/{demo_id}/loader.js
+         1. Content-type application/javascript.
+         2. Body contains "/embed-widget?tenant=" (correct iframe path).
+         3. Body contains "rk:close" (postMessage close hook).
+
+      Do NOT test the Widget UI, iframe rendering, or the sandbox modal —
+      that will be handled separately by the frontend testing pass on user
+      approval.
+  - agent: "testing"
+    message: |
+      ✅ BACKEND TESTING COMPLETE - ALL 3 NEW ENDPOINTS PASSED (6/6 tests)
       
-      Both backend tasks verified and working correctly:
+      Test Results Summary:
       
-      1. Admin Manage-Client endpoints (GET+PUT /api/admin/users/{id}):
-         - Admin authentication working
-         - GET /api/admin/users returns client list
-         - GET /api/admin/users/{id} returns full profile without password
-         - PUT /api/admin/users/{id} successfully updates 8 fields
-         - All updated fields persist and can be retrieved
-         - Non-admin users correctly blocked with 403 Forbidden
+      A. GET /api/public/tenant/{tenant_id} ✅
+         • Unauthenticated access works correctly
+         • Returns all required safe fields (14 fields verified)
+         • NO sensitive data exposed (verified 13 sensitive fields absent)
+         • 404 for non-existent tenant works correctly
       
-      2. Twilio API-Key auth support:
-         - Health endpoint correctly reports twilio_configured=true
-         - API Key authentication (TWILIO_API_KEY_SID + TWILIO_API_KEY_SECRET)
-           properly detected even without TWILIO_AUTH_TOKEN
+      B. GET /api/preview/proxy?url= ✅
+         • Valid URL (https://example.com) returns 200 with text/html
+         • Base tag injection verified: <base href="https://example.com/">
+         • Banner injection verified: "Rozio-Killer Live Sandbox" present
+         • NO frame-blocking headers (x-frame-options absent, no restrictive CSP)
+         • Invalid scheme (ftp://) correctly returns 400
+         • Non-existent domain returns 200 with fallback HTML (not 500)
       
-      No issues found. All endpoints working as expected.
+      C. GET /api/embed/{demo_id}/loader.js ✅
+         • Content-type: application/javascript ✓
+         • Iframe path: /embed-widget?tenant= ✓
+         • PostMessage close hook: rk:close ✓
+         • Mobile detection: IS_MOBILE ✓
+      
+      All 3 backend endpoints for Shopify embed + Live Sandbox are working correctly.
+      Ready for frontend/UI testing when approved by user.
