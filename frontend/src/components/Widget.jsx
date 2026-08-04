@@ -375,20 +375,20 @@ export default function Widget({ tenant, colors, catalog, embedded = false, onCl
 
   return (
     <div data-testid="sandbox-widget" className={containerClass} style={containerStyle}>
-      {/* VOICE-ONLY FULLSCREEN OVERLAY — blurred background, only the face is in focus */}
+      {/* VOICE-ONLY OVERLAY — sits INSIDE the widget box (absolute, not fixed) */}
       {callActive && (
-        <div data-testid="voice-only-overlay" className="fixed inset-0 z-[9999] flex flex-col items-center justify-center p-6" style={{ background: "rgba(6, 10, 14, 0.85)", backdropFilter: "blur(28px) saturate(140%)", WebkitBackdropFilter: "blur(28px) saturate(140%)" }}>
+        <div data-testid="voice-only-overlay" className="absolute inset-0 z-[80] flex flex-col items-center justify-center p-6" style={{ background: "rgba(6, 10, 14, 0.92)", backdropFilter: "blur(24px) saturate(140%)", WebkitBackdropFilter: "blur(24px) saturate(140%)" }}>
           {/* soft accent halo behind face */}
-          <div className="absolute pointer-events-none" style={{ width: "42rem", height: "42rem", borderRadius: "9999px", background: `radial-gradient(circle, ${accent}22 0%, transparent 65%)`, filter: "blur(40px)" }}></div>
-          <div className={`relative w-72 h-72 rounded-full overflow-hidden mb-8 voice-halo ${callListening || speaking ? "face-speaking" : "face-alive"}`} style={{ border: `4px solid ${accent}`, boxShadow: `0 0 80px ${accent}55, 0 0 160px ${accent}22` }}>
+          <div className="absolute pointer-events-none" style={{ width: "28rem", height: "28rem", borderRadius: "9999px", background: `radial-gradient(circle, ${accent}22 0%, transparent 65%)`, filter: "blur(40px)" }}></div>
+          <div className={`relative w-44 h-44 rounded-full overflow-hidden mb-6 voice-halo ${callListening || speaking ? "face-speaking" : "face-alive"}`} style={{ border: `3px solid ${accent}`, boxShadow: `0 0 60px ${accent}55, 0 0 120px ${accent}22` }}>
             <img src={avatarUrl(gender)} alt="AI" className="w-full h-full object-cover" data-face data-base-scale="1.15" style={{ objectPosition: "center 22%", transform: "scale(1.15)", transition: "transform 60ms linear, filter 60ms linear" }}/>
           </div>
-          <p className="uppercase tracking-[0.4em] text-sm font-bold mb-2 relative" style={{ color: accent }}>
+          <p className="uppercase tracking-[0.4em] text-xs font-bold mb-2 relative" style={{ color: accent }}>
             {callListening ? "LISTENING" : speaking ? "SPEAKING" : "IN CALL"}
           </p>
-          <p className="text-white/60 text-sm mb-10 text-center max-w-sm relative">Just talk &mdash; I&rsquo;m listening in any language.</p>
-          <button data-testid="widget-endcall-fullscreen" onClick={endCall} className="w-20 h-20 rounded-full flex items-center justify-center shadow-2xl hover:scale-105 transition-transform relative" style={{ background: "#F56565", color: "#fff" }}>
-            <PhoneOff size={28}/>
+          <p className="text-white/60 text-xs mb-6 text-center max-w-xs relative">Just talk &mdash; I&rsquo;m listening in any language.</p>
+          <button data-testid="widget-endcall-fullscreen" onClick={endCall} className="w-14 h-14 rounded-full flex items-center justify-center shadow-2xl hover:scale-105 transition-transform relative" style={{ background: "#F56565", color: "#fff" }}>
+            <PhoneOff size={22}/>
           </button>
         </div>
       )}
@@ -429,6 +429,14 @@ export default function Widget({ tenant, colors, catalog, embedded = false, onCl
               Hi there! &#128075;
             </p>
             <p className="text-white/70 text-sm mt-1 leading-snug">How can we help you today?</p>
+            <button
+              data-testid="widget-startcall-hero"
+              onClick={startCall}
+              className="mt-3 inline-flex items-center gap-2 text-[11px] font-bold uppercase tracking-widest px-3 py-2 rounded-full transition-all hover:scale-[1.02] hover:brightness-110"
+              style={{ background: accent, color: "#0D1117", boxShadow: `0 6px 20px ${accent}55` }}
+            >
+              <PhoneCall size={12}/> Start Live Voice Call
+            </button>
           </div>
         )}
       </div>

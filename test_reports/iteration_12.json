@@ -1,0 +1,54 @@
+{
+  "summary": "Iteration 12 (frontend only) — all requested changes verified. Landing page rebuilt with dev banner, Baazi/Upwork booking CTAs, single featured CEO review (Fresh N Clean Services) + one supporting review. Voice-only overlay is now widget-scoped (absolute inside sandbox-widget, not fullscreen) and end-call closes it. Hero call chip (widget-startcall-hero) is present in the greeting. Regression flows (sidebar 4-section nav, messages inbox, Bot Identity logo upload) still work.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "detailed_results": {
+    "landing_page": {
+      "dev-banner": "present, contains 'In development · Not publicly available' and 'Upwork'",
+      "hero-book-btn": "present, text = 'Book Baazi on Upwork'",
+      "nav-book-btn": "present",
+      "nav-login-link": "present",
+      "footer-book-btn": "present",
+      "review-featured": "present, contains 'Fresh N Clean Services' and 'step 3'; 'Top Review' badge in DOM (rendered uppercase via CSS)",
+      "review-1": "present (single supporting review — Marcus Chen)",
+      "review-2/review-3": "absent as required",
+      "start-trial/view-demo CTAs": "absent as required",
+      "nav-signup / hero-signup": "absent as required"
+    },
+    "widget_voice_overlay": {
+      "widget-startcall-hero": "present in fresh greeting",
+      "widget-startcall-btn": "present in header",
+      "widget_box": "x=621.39 y=416.03 w=360 h=441.97",
+      "overlay_box": "x=622.39 y=417.03 w=358 h=440",
+      "|dx|": "1.00 (<=3 OK)",
+      "|dw|": "2.00 (<=3 OK)",
+      "overlay_height <= widget_height": "true",
+      "overlay covers full viewport": "false (correctly scoped)",
+      "end-call closes overlay": "true"
+    },
+    "regression": {
+      "sidebar_nav_4_sections": "all present and switch correctly (dashboard/messages/knowledge/settings)",
+      "messages_inbox": "lists 6 conversations, human-handled thread renders 'Human handling' banner and human reply composer",
+      "logo-upload-input": "present under Settings → Bot Identity tab",
+      "current-logo": "present under Settings → Bot Identity tab",
+      "chat_stream_api": "returns SSE stream with LANG marker and delta chunks (verified via curl)"
+    }
+  },
+  "test_report_links": [],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Widget.jsx is 535 lines — approaching the 700-line split threshold but still manageable; consider extracting the voice-call overlay + startCall/listenLoop into a separate hook if it grows further.",
+    "Landing.jsx BAAZI_BOOKING_URL is hardcoded — consider moving to REACT_APP env for easy updates without a rebuild."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "n/a (frontend only)", "frontend": "100%"},
+  "test_credentials": "demo@client.com / Demo@12345",
+  "seed_data_creation": "none",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "All iteration 12 scope items verified. Voice overlay bounds captured within 3px of widget; overlay is z-[80] absolute inside sandbox-widget. Landing has exactly one featured review (Fresh N Clean Services CEO) and one supporting review (Marcus Chen). Landing footer + nav + hero all book Baazi via Upwork; no signup/trial/demo CTAs remain."
+}
