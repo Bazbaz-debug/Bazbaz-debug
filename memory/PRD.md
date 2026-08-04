@@ -16,6 +16,14 @@ Build a responsive full-stack multi-tenant SaaS app that outperforms Rozio AI. C
 - Streaming chat via SSE (fetch reader, not EventSource), token-buffering disabled.
 - Storage: Emergent Object Storage via `EMERGENT_LLM_KEY`, init at startup.
 
+## Implemented (2026-02-04)
+Phase 8 (2026-02-04) — Voice UX polish:
+- **Fixed frontend parse error** in `Widget.jsx` (dead `{false && (` block was crashing the build)
+- **Single realistic voice everywhere**: Removed the browser `speechSynthesis` branch entirely. Both text-chat and hands-free voice-call modes now use OpenAI **`tts-1-hd`** with the tenant's matched persona voice (`nova`/`onyx`/`sage`). No more voice switching between messages or between languages — one consistent, natural voice.
+- **Blurred call-mode background**: Voice-only fullscreen overlay now uses `backdrop-filter: blur(28px) saturate(140%)` with a semi-opaque dark tint + soft accent halo behind the face. Chat text and site UI are completely blurred out; only the AI face is in focus.
+- **Backend fallback bug**: fixed `KeyError: 'image'` in `/api/avatar/lipsync` graceful fallback path (server used to return 500 when Fal.ai errored).
+- **Fal.ai status**: current `FAL_KEY` in `.env` returns "invalid key credentials". User needs to paste a valid key from https://fal.ai/dashboard/keys to enable real lip-synced talking-head video. Until then the widget gracefully renders the still portrait + realistic HD TTS with mouth animation overlay.
+
 ## Implemented (2026-02-03)
 Phase 1:
 - Landing + invite toggle + auth (login/register/forgot with Resend emails)

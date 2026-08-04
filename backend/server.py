@@ -1069,7 +1069,7 @@ async def avatar_lipsync(req: LipsyncReq):
     # 1) Generate TTS audio bytes
     tts = OpenAITextToSpeech(api_key=EMERGENT_LLM_KEY)
     try:
-        b64 = await tts.generate_speech_base64(text=req.text[:800], voice=profile["voice"], model="tts-1", response_format="mp3")
+        b64 = await tts.generate_speech_base64(text=req.text[:800], voice=profile["voice"], model="tts-1-hd", response_format="mp3")
     except Exception as e:
         raise HTTPException(500, f"TTS failed: {e}")
     audio_bytes = base64.b64decode(b64)
@@ -1147,7 +1147,7 @@ class TTSReq(BaseModel):
 async def voice_tts(req: TTSReq):
     tts = OpenAITextToSpeech(api_key=EMERGENT_LLM_KEY)
     try:
-        b64 = await tts.generate_speech_base64(text=req.text[:2000], voice=req.voice, model="tts-1", response_format="mp3")
+        b64 = await tts.generate_speech_base64(text=req.text[:2000], voice=req.voice, model="tts-1-hd", response_format="mp3")
         if req.tenant_id:
             # ~ 150 words/min TTS; approximate seconds from char count
             secs = max(1, int(len(req.text) / 15))

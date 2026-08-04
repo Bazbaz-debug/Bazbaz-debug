@@ -71,36 +71,14 @@ export default function Widget({ tenant, colors, catalog }) {
     // CRITICAL: kill any previously-playing audio to prevent double voices
     try { if (audioRef.current) { audioRef.current.pause(); audioRef.current.currentTime = 0; audioRef.current = null; } } catch {}
     try { if ("speechSynthesis" in window) window.speechSynthesis.cancel(); } catch {}
-    const lang = (langHint || replyLang || "en").toLowerCase();
-    // Voice-call mode: ONLY browser speechSynthesis (native lang voice, zero latency)
-    if (callActiveRef.current && "speechSynthesis" in window) {
-      try {
-        const u = new SpeechSynthesisUtterance(text.slice(0, 1200));
-        u.rate = 1.02; u.pitch = 1.0; u.volume = 1.0;
-        const voices = window.speechSynthesis.getVoices();
-        const g = (tenant?.avatar_gender || "female").toLowerCase();
-        const langVoices = voices.filter(v => (v.lang || "").toLowerCase().startsWith(lang));
-        const pool = langVoices.length ? langVoices : voices;
-        let pick = pool.find(v =>
-          (g === "male" && /male|david|daniel|guy|jorge|carlos|hans|hiroshi|takumi|wang/i.test(v.name)) ||
-          (g === "female" && /female|samantha|zira|jenny|aria|maria|helena|marlene|kyoko|xiaoxiao|paulina/i.test(v.name))
-        );
-        if (!pick) pick = pool[0];
-        if (pick) u.voice = pick;
-        u.lang = pick?.lang || lang;
-        setSpeaking(true);
-        return new Promise((resolve) => {
-          u.onend = () => { setSpeaking(false); resolve(); };
-          u.onerror = () => { setSpeaking(false); resolve(); };
-          window.speechSynthesis.speak(u);
-        });
-      } catch { setSpeaking(false); return; }
-    }
-    // Text-chat mode: ONLY OpenAI TTS (higher quality, multi-language native)
+    // SINGLE VOICE, ALWAYS: OpenAI TTS with the tenant's matched persona voice.
+    // Never falls back to browser speechSynthesis (which picks a different voice per language and sounds robotic).
+    const g = (tenant?.avatar_gender || "female").toLowerCase();
+    const voiceName = g === "male" ? "onyx" : g === "neutral" ? "sage" : "nova";
     try {
       const r = await fetch(`${API}/voice/tts`, {
         method: "POST", headers: {"Content-Type":"application/json"},
-        body: JSON.stringify({ text: text.slice(0, 1200), voice: "nova", tenant_id: tenant?.id }),
+        body: JSON.stringify({ text: text.slice(0, 1200), voice: voiceName, tenant_id: tenant?.id }),
       });
       const data = await r.json();
       if (data.audio_base64) {
@@ -114,7 +92,7 @@ export default function Widget({ tenant, colors, catalog }) {
         });
       }
     } catch { setSpeaking(false); }
-  }, [voiceMode, tenant, replyLang]);
+  }, [voiceMode, tenant]);
 
   const escalate = useCallback(async () => {
     if (!tenant?.id) return;
@@ -304,10 +282,12 @@ export default function Widget({ tenant, colors, catalog }) {
 
   return (
     <div data-testid="sandbox-widget" className="absolute bottom-6 right-6 w-[360px] rounded-2xl overflow-hidden shadow-2xl flex flex-col" style={{ background: bg, border: "1px solid rgba(255,255,255,0.08)", maxHeight: "82%" }}>
-      {/* VOICE-ONLY FULLSCREEN OVERLAY */}
+      {/* VOICE-ONLY FULLSCREEN OVERLAY — blurred background, only the face is in focus */}
       {callActive && (
-        <div data-testid="voice-only-overlay" className="fixed inset-0 z-[9999] flex flex-col items-center justify-center p-6" style={{ background: `radial-gradient(circle at center, ${accent}25 0%, #0D1117 70%, #000 100%)` }}>
-          <div className={`relative w-72 h-72 rounded-full overflow-hidden mb-8 voice-halo ${callListening || speaking ? "face-speaking" : "face-alive"}`} style={{ border: `4px solid ${accent}` }}>
+        <div data-testid="voice-only-overlay" className="fixed inset-0 z-[9999] flex flex-col items-center justify-center p-6" style={{ background: "rgba(6, 10, 14, 0.85)", backdropFilter: "blur(28px) saturate(140%)", WebkitBackdropFilter: "blur(28px) saturate(140%)" }}>
+          {/* soft accent halo behind face */}
+          <div className="absolute pointer-events-none" style={{ width: "42rem", height: "42rem", borderRadius: "9999px", background: `radial-gradient(circle, ${accent}22 0%, transparent 65%)`, filter: "blur(40px)" }}></div>
+          <div className={`relative w-72 h-72 rounded-full overflow-hidden mb-8 voice-halo ${callListening || speaking ? "face-speaking" : "face-alive"}`} style={{ border: `4px solid ${accent}`, boxShadow: `0 0 80px ${accent}55, 0 0 160px ${accent}22` }}>
             <img src={avatarUrl(gender)} alt="AI" className="w-full h-full object-cover"/>
             {/* Mouth animation overlay while speaking */}
             {speaking && (
@@ -316,11 +296,11 @@ export default function Widget({ tenant, colors, catalog }) {
               </div>
             )}
           </div>
-          <p className="uppercase tracking-[0.4em] text-sm font-bold mb-2" style={{ color: accent }}>
+          <p className="uppercase tracking-[0.4em] text-sm font-bold mb-2 relative" style={{ color: accent }}>
             {callListening ? "LISTENING" : speaking ? "SPEAKING" : "IN CALL"}
           </p>
-          <p className="text-white/50 text-sm mb-10 text-center max-w-sm">Just talk — I'm listening in any language.</p>
-          <button data-testid="widget-endcall-fullscreen" onClick={endCall} className="w-20 h-20 rounded-full flex items-center justify-center shadow-2xl hover:scale-105 transition-transform" style={{ background: "#F56565", color: "#fff" }}>
+          <p className="text-white/60 text-sm mb-10 text-center max-w-sm relative">Just talk &mdash; I&rsquo;m listening in any language.</p>
+          <button data-testid="widget-endcall-fullscreen" onClick={endCall} className="w-20 h-20 rounded-full flex items-center justify-center shadow-2xl hover:scale-105 transition-transform relative" style={{ background: "#F56565", color: "#fff" }}>
             <PhoneOff size={28}/>
           </button>
         </div>
