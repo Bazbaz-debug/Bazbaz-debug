@@ -7,7 +7,7 @@ import json
 import sys
 
 # Read base URL from frontend/.env
-BASE_URL = "https://config-dashboard-30.preview.emergentagent.com/api"
+BASE_URL = "https://shopify-bot-chat-fix.preview.emergentagent.com/api"
 
 # Test credentials
 ADMIN_EMAIL = "admin@rozio-killer.com"
