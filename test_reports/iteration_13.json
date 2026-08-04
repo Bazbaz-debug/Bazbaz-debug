@@ -1,0 +1,37 @@
+{
+  "summary": "Tested iteration 13 features: human-agent visitor poll, Shopify order tracking, GPT-4o vision photo product search, Widget quickreplies/input-row buttons/tracking form, Shopify config UI in Settings → Integrations. 5/6 backend tests passed, 1 skipped due to EMERGENT_LLM_KEY budget exhaustion. All 6 frontend UI checks (quickreplies, input row buttons, tracking form open+submit, shopify config inputs) passed.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "/api/vision/product-search", "issue": "EMERGENT_LLM_KEY budget exceeded ('Current cost: 1.02, Max budget: 1.0') — vision endpoint returns 502 for real image uploads. Endpoint code path is correct; only the LLM key budget is the blocker. Also affects /api/chat/stream (LLM replies fail)."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration13.py",
+    "/app/test_reports/pytest/iter13_results.xml"
+  ],
+  "action_items": [
+    "Top up / rotate EMERGENT_LLM_KEY — current budget is exhausted, breaking /api/chat/stream LLM replies and /api/vision/product-search real image analysis. All non-LLM logic and error paths are working correctly."
+  ],
+  "critical_code_review_comments": [
+    "server.py is now ~1928 lines — should be split into routers (chat, orders, vision, admin, messages) for maintainability.",
+    "/api/order/track uses synchronous `requests.get` inside an async endpoint — should use httpx.AsyncClient to avoid blocking the event loop under load.",
+    "/api/vision/product-search: `content_type='image'` literal is intentional per emergentintegrations contract (documented in comment) — kept as-is.",
+    "Widget.jsx polling useEffect on /pending endpoint is correctly implemented; deps include `[tenant, sessionId, playTTS]`. Consider also cancelling in-flight fetch on unmount."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration13.py"
+  ],
+  "success_rate": {"backend": "83% (5/6 passed, 1 skipped due to LLM budget)", "frontend": "100% (all UI checks pass)"},
+  "test_credentials": "demo@client.com / Demo@12345 — tenant 3c1aea51-4eac-49fd-8198-cc5bf1e155dc",
+  "seed_data_creation": "Test seeds catalog directly in MongoDB (1 item: Red running shoes) for the demo tenant. Also cleared stray shopify_domain field left over from the FRONTEND-6 blur test.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Backend tests live at /app/backend/tests/test_iteration13.py. LLM budget on EMERGENT_LLM_KEY has been exhausted (Max budget: 1.0, current ~1.02) which will cause chat/stream and vision search to return 502. All validation paths (missing config, bad tenant, non-image, empty catalog) work perfectly. Widget polling for /pending endpoint verified in code + confirmed via backend test that human_agent messages are correctly returned and `since` filter works.",
+  "rca of the issue": "N/A — the only failing scenario (vision matching real image end-to-end) is caused by an out-of-scope environmental issue (EMERGENT_LLM_KEY budget exhausted). Backend logs confirm 'Budget has been exceeded! Current cost: 1.02, Max budget: 1.0'. Endpoint returns 502 as designed. To resolve: rotate/top-up EMERGENT_LLM_KEY."
+}

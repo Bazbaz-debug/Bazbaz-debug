@@ -360,6 +360,11 @@ class ProfileUpdate(BaseModel):
     bot_greeting: Optional[str] = None
     bot_tone: Optional[str] = None  # professional | friendly | casual | luxury
     bot_tagline: Optional[str] = None
+    # Notification / contact
+    notification_email: Optional[str] = None
+    # Order-tracking integration (Shopify)
+    shopify_domain: Optional[str] = None  # e.g. myshop.myshopify.com
+    shopify_admin_token: Optional[str] = None  # Admin API access token (shpat_...)
 
 class AdminClientUpdate(BaseModel):
     """Full editable client fields for the admin Manage-Client screen."""
@@ -1646,6 +1651,157 @@ async def mark_conversation(session_id: str, status: str = Query(...), user=Depe
         {"$set": {"status": status}},
     )
     return {"ok": True}
+
+@api_router.get("/chat/session/{session_id}/pending")
+async def visitor_poll_pending(session_id: str, tenant_id: str = Query(...), since: Optional[str] = Query(None)):
+    """VISITOR-facing poll for human_agent messages.
+    The widget calls this every few seconds while open — returns any human_agent
+    (business-owner) replies newer than `since`. No auth (the session_id is the
+    secret; only that visitor knows it)."""
+    q = {"session_id": session_id, "tenant_id": tenant_id, "role": "human_agent"}
+    if since:
+        q["created_at"] = {"$gt": since}
+    msgs = await db.messages.find(q, {"_id": 0}).sort("created_at", 1).limit(50).to_list(50)
+    return {"messages": msgs, "server_time": now_iso()}
+
+# ============= ORDER TRACKING (Shopify) =============
+class OrderTrackRequest(BaseModel):
+    tenant_id: str
+    order_number: str
+    email: Optional[str] = None
+
+def _shopify_stages(order: dict) -> List[dict]:
+    """Convert a Shopify order dict into a normalised 4-stage timeline."""
+    financial = (order.get("financial_status") or "").lower()  # paid / pending / refunded
+    fulfillment = (order.get("fulfillment_status") or "").lower()  # fulfilled / partial / null
+    created_at = order.get("created_at")
+    fulfillments = order.get("fulfillments") or []
+    shipped_at = None
+    delivered_at = None
+    tracking_number = None
+    tracking_url = None
+    for f in fulfillments:
+        if f.get("created_at") and not shipped_at:
+            shipped_at = f.get("created_at")
+        if (f.get("shipment_status") or "").lower() == "delivered":
+            delivered_at = f.get("updated_at") or f.get("created_at")
+        tn = f.get("tracking_number") or (f.get("tracking_numbers") or [None])[0]
+        tu = f.get("tracking_url") or (f.get("tracking_urls") or [None])[0]
+        if tn and not tracking_number: tracking_number = tn
+        if tu and not tracking_url: tracking_url = tu
+    ordered_done = bool(created_at)
+    packed_done = fulfillment in ("fulfilled", "partial") or bool(shipped_at)
+    shipped_done = bool(shipped_at) or fulfillment == "fulfilled"
+    delivered_done = bool(delivered_at)
+    return [
+        {"key": "ordered", "label": "Ordered", "done": ordered_done, "at": created_at},
+        {"key": "packed", "label": "Packed", "done": packed_done, "at": shipped_at if packed_done else None},
+        {"key": "shipped", "label": "Shipped", "done": shipped_done, "at": shipped_at},
+        {"key": "delivered", "label": "Delivered", "done": delivered_done, "at": delivered_at},
+    ], tracking_number, tracking_url
+
+@api_router.post("/order/track")
+async def track_order(req: OrderTrackRequest):
+    """Look up a Shopify order and return a normalised 4-stage timeline the
+    widget can render as a package journey. Requires the tenant to have set
+    `shopify_domain` and `shopify_admin_token` under Settings → Integrations."""
+    tenant = await db.users.find_one({"id": req.tenant_id})
+    if not tenant:
+        raise HTTPException(404, "Tenant not found")
+    domain = (tenant.get("shopify_domain") or "").replace("https://", "").replace("http://", "").rstrip("/")
+    token = tenant.get("shopify_admin_token")
+    if not domain or not token:
+        raise HTTPException(400, "This store hasn't connected Shopify order tracking yet. Ask the owner to configure it under Settings → Integrations.")
+    # Normalise order number ("#1042" -> "1042")
+    num = req.order_number.strip().lstrip("#")
+    url = f"https://{domain}/admin/api/2024-04/orders.json?name={num}&status=any"
+    try:
+        r = requests.get(url, headers={"X-Shopify-Access-Token": token, "Content-Type": "application/json"}, timeout=15)
+        r.raise_for_status()
+        orders = r.json().get("orders", [])
+    except Exception as e:
+        logger.error(f"Shopify lookup failed: {e}")
+        raise HTTPException(502, "Couldn't reach Shopify — please double-check the order number in a moment.")
+    if req.email:
+        orders = [o for o in orders if (o.get("email") or "").lower() == req.email.lower()] or orders
+    if not orders:
+        raise HTTPException(404, f"No order matching #{num} was found. Please check the number and try again.")
+    order = orders[0]
+    stages, tracking_number, tracking_url = _shopify_stages(order)
+    return {
+        "order_number": order.get("name") or f"#{num}",
+        "financial_status": order.get("financial_status"),
+        "fulfillment_status": order.get("fulfillment_status"),
+        "total": order.get("total_price"),
+        "currency": order.get("currency"),
+        "stages": stages,
+        "tracking_number": tracking_number,
+        "tracking_url": tracking_url,
+    }
+
+# ============= PHOTO PRODUCT SEARCH (GPT-4o vision) =============
+@api_router.post("/vision/product-search")
+async def vision_product_search(tenant_id: str = Query(...), file: UploadFile = File(...)):
+    """Visitor uploads a photo of a product; we ask GPT-4o vision to describe
+    it and match against the tenant's catalog. Returns up to 3 matches."""
+    from emergentintegrations.llm.chat import FileContent
+    tenant = await db.users.find_one({"id": tenant_id})
+    if not tenant:
+        raise HTTPException(404, "Tenant not found")
+    catalog = tenant.get("catalog") or []
+    if not catalog:
+        raise HTTPException(400, "This store hasn't synced their product catalog yet — photo search is unavailable.")
+    if not file.content_type or not file.content_type.startswith("image/"):
+        raise HTTPException(400, "Please upload an image (PNG, JPG, or WEBP).")
+    data = await file.read()
+    if len(data) > 8 * 1024 * 1024:
+        raise HTTPException(400, "Image too large — max 8MB.")
+    b64 = base64.b64encode(data).decode()
+    # Truncate the catalog string to avoid token blowup
+    cat_lines = []
+    for i, p in enumerate(catalog[:60]):
+        cat_lines.append(f"{i}. {p.get('name','')} — {p.get('price','')} — {p.get('description','')[:120]}")
+    catalog_text = "\n".join(cat_lines)
+    system = (
+        "You are a product-matching assistant. The visitor sent a photo of an item "
+        "they want to find in this store. Compare the image to the catalog below and "
+        "return the 3 best matches. Respond with STRICT JSON only, no markdown, in the form: "
+        '{"description":"<what you see in the photo, 1 sentence>","matches":[{"index":<int>,"reason":"<short>"}]}'
+    )
+    user_prompt = f"Catalog (index. name — price — description):\n{catalog_text}\n\nMatch the attached photo to up to 3 items. If nothing fits, return an empty matches array."
+    try:
+        chat = LlmChat(api_key=EMERGENT_LLM_KEY, session_id=f"vision-{uuid.uuid4()}", system_message=system).with_model("openai", "gpt-4o")
+        # emergentintegrations expects content_type="image" (literal); it will
+        # auto-detect the MIME from the base64 header.
+        msg = UserMessage(text=user_prompt, file_contents=[FileContent(content_type="image", file_content_base64=b64)])
+        reply = await chat.send_message(msg)
+        text = reply if isinstance(reply, str) else getattr(reply, "text", str(reply))
+    except Exception as e:
+        logger.error(f"Vision search failed: {e}")
+        raise HTTPException(502, "Sorry, image analysis is unavailable right now. Please describe what you're looking for.")
+    # Parse JSON out of the reply (LLM sometimes wraps in ```json)
+    import re as _re
+    m = _re.search(r"\{.*\}", text, _re.DOTALL)
+    parsed = {"description": "", "matches": []}
+    if m:
+        try:
+            parsed = json.loads(m.group(0))
+        except Exception:
+            pass
+    hydrated = []
+    for match in (parsed.get("matches") or [])[:3]:
+        idx = match.get("index")
+        if isinstance(idx, int) and 0 <= idx < len(catalog):
+            p = catalog[idx]
+            hydrated.append({
+                "name": p.get("name"),
+                "price": p.get("price"),
+                "url": p.get("url"),
+                "image": p.get("image"),
+                "reason": match.get("reason", ""),
+            })
+    return {"description": parsed.get("description", ""), "matches": hydrated}
+
 
 # ============= VOICE (Whisper STT + OpenAI TTS) =============
 @api_router.post("/voice/stt")

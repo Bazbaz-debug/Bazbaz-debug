@@ -428,6 +428,21 @@ function SettingsPanel({ user, updateField, refresh, colors }) {
 
         <TabsContent value="integrations" className="space-y-6">
           <GoogleCalendarCard/>
+          <Card title="Shopify order tracking" subtitle="Let visitors track their order right inside the chat. Requires an Admin API access token from your Shopify store.">
+            <div className="grid md:grid-cols-2 gap-4">
+              <div>
+                <Label className="text-[#A0AEC0]">Shopify store domain</Label>
+                <Input data-testid="shopify-domain-input" defaultValue={user.shopify_domain || ""} onBlur={e => updateField("shopify_domain", e.target.value.replace(/^https?:\/\//, "").replace(/\/$/, ""))} placeholder="yourshop.myshopify.com" className="mt-1.5 bg-[#0D1117] border-white/10 text-white h-11"/>
+              </div>
+              <div>
+                <Label className="text-[#A0AEC0]">Admin API access token</Label>
+                <Input data-testid="shopify-token-input" type="password" defaultValue={user.shopify_admin_token || ""} onBlur={e => updateField("shopify_admin_token", e.target.value)} placeholder="shpat_..." className="mt-1.5 bg-[#0D1117] border-white/10 text-white h-11"/>
+              </div>
+            </div>
+            <p className="text-[11px] text-[#A0AEC0] mt-3 leading-relaxed">
+              Get a token: Shopify Admin → Apps → App and sales channel settings → Develop apps → Create an app → API scopes → grant <b>read_orders</b> and <b>read_fulfillments</b>, then install and copy the Admin API access token.
+            </p>
+          </Card>
           <Card title="Contact & notifications" subtitle="Where escalations and lead alerts are sent">
             <div className="grid md:grid-cols-2 gap-4">
               <div>

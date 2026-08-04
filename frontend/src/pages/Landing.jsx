@@ -6,8 +6,9 @@ import { Button } from "@/components/ui/button";
 import MouseGradient from "@/components/MouseGradient";
 import ParticleCanvas from "@/components/ParticleCanvas";
 
-// Baazi Suufi's Upwork profile / booking link (update via ENV or hardcode when known)
-const BAAZI_BOOKING_URL = "https://www.upwork.com/freelancers/baazisuufi";
+// Baazi Suufi's Upwork profile / booking link. Override with REACT_APP_BOOKING_URL
+// so the URL can be swapped without a rebuild.
+const BAAZI_BOOKING_URL = process.env.REACT_APP_BOOKING_URL || "https://www.upwork.com/freelancers/baazisuufi";
 
 // ================ CONSTANT DATA ================
 const PILLS_ROW_1 = [

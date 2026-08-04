@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from "react";
-import { Bot, Send, X, Loader2, Mic, MicOff, Volume2, Sparkles, PhoneCall, PhoneOff, ShoppingCart } from "lucide-react";
+import { Bot, Send, X, Loader2, Mic, MicOff, Volume2, Sparkles, PhoneCall, PhoneOff, ShoppingCart, Camera, Package, Headset, CheckCircle2, Circle } from "lucide-react";
 import { API } from "@/lib/api";
 import { toast } from "sonner";
 
@@ -258,6 +258,96 @@ export default function Widget({ tenant, colors, catalog, embedded = false, onCl
     finally { setBusy(false); }
   }, [busy, sessionId, tenant, voiceMode, lipsyncMode, playTTS, escalate, bookSlot]);
 
+  // ============ Poll for human_agent replies (business-owner takeover) ============
+  const lastHumanCheckRef = useRef(new Date().toISOString());
+  useEffect(() => {
+    if (!tenant?.id) return;
+    let cancelled = false;
+    const poll = async () => {
+      try {
+        const r = await fetch(`${API}/chat/session/${sessionId}/pending?tenant_id=${tenant.id}&since=${encodeURIComponent(lastHumanCheckRef.current)}`);
+        const d = await r.json();
+        if (cancelled) return;
+        if (d.server_time) lastHumanCheckRef.current = d.server_time;
+        const news = d.messages || [];
+        if (news.length) {
+          setMessages(m => [
+            ...m,
+            ...news.map(n => ({ role: "human_agent", text: n.text, at: n.created_at })),
+          ]);
+          news.forEach(n => playTTS(n.text));
+        }
+      } catch {}
+    };
+    const iv = setInterval(poll, 4000);
+    return () => { cancelled = true; clearInterval(iv); };
+  }, [tenant, sessionId, playTTS]);
+
+  // ============ Photo → product search (GPT-4o vision) ============
+  const [visionBusy, setVisionBusy] = useState(false);
+  const photoInputRef = useRef(null);
+  const sendPhoto = async (file) => {
+    if (!file || !tenant?.id) return;
+    if (!file.type.startsWith("image/")) { toast.error("Please pick an image file"); return; }
+    setMessages(m => [...m, { role: "user", text: `📷 Photo: ${file.name}` }, { role: "assistant", text: "", searchingPhoto: true }]);
+    setVisionBusy(true); setBusy(true);
+    try {
+      const fd = new FormData(); fd.append("file", file);
+      const r = await fetch(`${API}/vision/product-search?tenant_id=${tenant.id}`, { method: "POST", body: fd });
+      const data = await r.json();
+      if (!r.ok) throw new Error(data?.detail || "Photo search failed");
+      const reply = data.matches?.length
+        ? `I think you're looking at ${data.description || "this"}. Here are the closest matches:`
+        : `${data.description || "I can see the photo,"} but I couldn't find a clean match in the catalog. Want to describe it in a message?`;
+      setMessages(m => { const c = [...m]; c[c.length - 1] = { role: "assistant", text: reply, matches: data.matches || [] }; return c; });
+      if (voiceMode && reply) await playTTS(reply);
+    } catch (e) {
+      setMessages(m => { const c = [...m]; c[c.length - 1] = { role: "assistant", text: e.message || "Photo search failed. Try again in a moment." }; return c; });
+    } finally { setVisionBusy(false); setBusy(false); }
+  };
+
+  // ============ Shopify order tracking ============
+  const [trackingFor, setTrackingFor] = useState(false); // shows form when true
+  const [trackNum, setTrackNum] = useState("");
+  const [trackEmail, setTrackEmail] = useState("");
+  const [trackBusy, setTrackBusy] = useState(false);
+  const startTracking = () => {
+    setTrackingFor(true);
+    setMessages(m => [...m, { role: "assistant", text: "Sure — what's your order number? (You can include the email you used at checkout for a faster match.)" }]);
+  };
+  const submitTracking = async () => {
+    if (!trackNum.trim() || !tenant?.id) return;
+    setTrackBusy(true);
+    setMessages(m => [...m, { role: "user", text: `Track order ${trackNum}${trackEmail ? " · " + trackEmail : ""}` }, { role: "assistant", text: "", searchingPhoto: true }]);
+    try {
+      const r = await fetch(`${API}/order/track`, {
+        method: "POST", headers: {"Content-Type":"application/json"},
+        body: JSON.stringify({ tenant_id: tenant.id, order_number: trackNum.trim(), email: trackEmail.trim() || undefined }),
+      });
+      const data = await r.json();
+      if (!r.ok) throw new Error(data?.detail || "Order lookup failed");
+      const stages = data.stages || [];
+      const now_at = stages.filter(s => s.done).slice(-1)[0]?.label || "Ordered";
+      setMessages(m => {
+        const c = [...m];
+        c[c.length - 1] = {
+          role: "assistant",
+          text: `Order ${data.order_number} — currently ${now_at.toLowerCase()}.`,
+          tracking: {
+            stages,
+            tracking_number: data.tracking_number,
+            tracking_url: data.tracking_url,
+            order_number: data.order_number,
+          },
+        };
+        return c;
+      });
+      setTrackingFor(false); setTrackNum(""); setTrackEmail("");
+    } catch (e) {
+      setMessages(m => { const c = [...m]; c[c.length - 1] = { role: "assistant", text: e.message || "Couldn't find that order — please double-check the number." }; return c; });
+    } finally { setTrackBusy(false); }
+  };
+
   // ============ Hold-to-talk mic (single utterance via Whisper) ============
   const startRecording = async () => {
     try {
@@ -444,26 +534,54 @@ export default function Widget({ tenant, colors, catalog, embedded = false, onCl
       <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-4 space-y-3 rk-scroll" style={{ maxHeight: embedded ? undefined : 380, background: `radial-gradient(circle at 50% 0%, ${accent}0a 0%, transparent 55%)` }}>
         {messages.map((m, i) => {
           const isUser = m.role === "user";
+          const isHuman = m.role === "human_agent";
           const isEmpty = !m.text;
           return (
             <div key={i} className={`flex ${isUser ? "justify-end" : "justify-start"} msg-in`}>
               {!isUser && (
-                <div className="w-7 h-7 rounded-full flex-shrink-0 mr-2 flex items-center justify-center self-end" style={{ background: `linear-gradient(135deg, ${accent}, ${accent}77)`, boxShadow: `0 2px 8px ${accent}44` }}>
-                  <Sparkles size={12} className="text-[#0D1117]"/>
+                <div className="w-7 h-7 rounded-full flex-shrink-0 mr-2 flex items-center justify-center self-end" style={isHuman ? { background: "#48BB78", boxShadow: "0 2px 8px rgba(72,187,120,0.55)" } : { background: `linear-gradient(135deg, ${accent}, ${accent}77)`, boxShadow: `0 2px 8px ${accent}44` }}>
+                  {isHuman ? <Headset size={12} className="text-[#0D1117]"/> : <Sparkles size={12} className="text-[#0D1117]"/>}
                 </div>
               )}
-              <div className={`max-w-[80%] px-4 py-2.5 text-[13.5px] leading-relaxed ${isUser ? "rounded-[18px] rounded-br-[4px]" : "rounded-[18px] rounded-bl-[4px]"}`} style={isUser ? { background: `linear-gradient(135deg, ${bubble}, ${bubble}dd)`, color: "#0D1117", boxShadow: `0 6px 20px ${bubble}33` } : { background: "rgba(255,255,255,0.055)", color: "#fff", border: "1px solid rgba(255,255,255,0.08)", backdropFilter: "blur(8px)", boxShadow: "0 4px 16px rgba(0,0,0,0.15)" }}>
+              <div className={`max-w-[80%] px-4 py-2.5 text-[13.5px] leading-relaxed ${isUser ? "rounded-[18px] rounded-br-[4px]" : "rounded-[18px] rounded-bl-[4px]"}`} style={isUser ? { background: `linear-gradient(135deg, ${bubble}, ${bubble}dd)`, color: "#0D1117", boxShadow: `0 6px 20px ${bubble}33` } : isHuman ? { background: "rgba(72,187,120,0.14)", color: "#fff", border: "1px solid rgba(72,187,120,0.45)", boxShadow: "0 4px 16px rgba(72,187,120,0.15)" } : { background: "rgba(255,255,255,0.055)", color: "#fff", border: "1px solid rgba(255,255,255,0.08)", backdropFilter: "blur(8px)", boxShadow: "0 4px 16px rgba(0,0,0,0.15)" }}>
+                {isHuman && (
+                  <p className="text-[9px] uppercase tracking-widest font-bold mb-1" style={{ color: accent }} data-testid={`widget-humanmsg-${i}`}>Support · Human</p>
+                )}
                 {isEmpty && !isUser ? (
-                  <div className="flex items-center gap-1 py-1" data-testid="widget-typing">
-                    <span className="w-1.5 h-1.5 rounded-full typing-dot" style={{ background: accent, animationDelay: "0ms" }}></span>
-                    <span className="w-1.5 h-1.5 rounded-full typing-dot" style={{ background: accent, animationDelay: "160ms" }}></span>
-                    <span className="w-1.5 h-1.5 rounded-full typing-dot" style={{ background: accent, animationDelay: "320ms" }}></span>
-                  </div>
+                  m.searchingPhoto ? (
+                    <div className="flex items-center gap-2 text-xs" data-testid="widget-searching">
+                      <Loader2 size={12} className="animate-spin" style={{ color: accent }}/> Working on it&hellip;
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-1 py-1" data-testid="widget-typing">
+                      <span className="w-1.5 h-1.5 rounded-full typing-dot" style={{ background: accent, animationDelay: "0ms" }}></span>
+                      <span className="w-1.5 h-1.5 rounded-full typing-dot" style={{ background: accent, animationDelay: "160ms" }}></span>
+                      <span className="w-1.5 h-1.5 rounded-full typing-dot" style={{ background: accent, animationDelay: "320ms" }}></span>
+                    </div>
+                  )
                 ) : (
                   <span className="whitespace-pre-wrap">{m.text}</span>
                 )}
                 {m.gcal && (
                   <a href={m.gcal} target="_blank" rel="noopener noreferrer" data-testid="widget-gcal-link" className="mt-2 block text-xs font-bold underline" style={{ color: isUser ? "#0D1117" : accent }}>Add to Google Calendar &rarr;</a>
+                )}
+                {m.tracking && (
+                  <TrackingTimeline accent={accent} data={m.tracking} testIdSuffix={i}/>
+                )}
+                {m.matches && m.matches.length > 0 && (
+                  <div className="mt-3 space-y-2" data-testid={`widget-photo-matches-${i}`}>
+                    {m.matches.map((p, mi) => (
+                      <a key={mi} href={p.url || "#"} target="_blank" rel="noopener noreferrer" data-testid={`widget-match-${i}-${mi}`} className="flex items-center gap-2 rounded-lg overflow-hidden border transition-colors hover:bg-white/10" style={{ borderColor: `${accent}44`, background: "rgba(255,255,255,0.03)" }}>
+                        {p.image && <img src={p.image} alt={p.name} className="w-12 h-12 object-cover flex-shrink-0"/>}
+                        <div className="min-w-0 flex-1 py-1.5 pr-2">
+                          <p className="text-white text-xs font-bold truncate">{p.name}</p>
+                          <p className="text-[10px]" style={{ color: accent }}>{p.price}</p>
+                          {p.reason && <p className="text-[10px] text-white/50 truncate">{p.reason}</p>}
+                        </div>
+                        <ShoppingCart size={14} style={{ color: accent }} className="mr-2"/>
+                      </a>
+                    ))}
+                  </div>
                 )}
                 {m.buys && m.buys.length > 0 && (
                   <div className="mt-2.5 flex flex-col gap-1.5">
@@ -498,26 +616,49 @@ export default function Widget({ tenant, colors, catalog, embedded = false, onCl
         {!busy && messages.length <= 2 && !messages.some(m => m.buys?.length) && (
           <div className="pt-2 space-y-2" data-testid="widget-quickreplies">
             {[
-              "Show me your products",
-              "Book a call with the team",
-              "Talk to a human",
-            ].map((label, i) => (
+              { label: "Show me your products", onClick: () => sendText("Show me your products") },
+              { label: "Track my order", testId: "widget-quickreply-track", onClick: startTracking },
+              { label: "Send a photo of a product", testId: "widget-quickreply-photo", onClick: () => photoInputRef.current?.click() },
+              { label: "Book a call with the team", onClick: () => sendText("Book a call with the team") },
+            ].map((item, i) => (
               <button
                 key={i}
-                onClick={() => sendText(label)}
-                data-testid={`widget-quickreply-${i}`}
+                onClick={item.onClick}
+                data-testid={item.testId || `widget-quickreply-${i}`}
                 className="w-full text-left text-[13px] px-4 py-3 rounded-2xl border transition-all hover:bg-white/[0.06] hover:border-white/20 group flex items-center justify-between"
                 style={{ borderColor: "rgba(255,255,255,0.08)", background: "rgba(255,255,255,0.03)", color: "#fff" }}
               >
-                <span className="font-medium">{label}</span>
+                <span className="font-medium">{item.label}</span>
                 <span className="text-lg opacity-40 group-hover:opacity-100 group-hover:translate-x-0.5 transition-all" style={{ color: accent }}>&rarr;</span>
               </button>
             ))}
           </div>
         )}
+        {/* Order tracking form */}
+        {trackingFor && (
+          <div className="pt-2" data-testid="widget-tracking-form">
+            <div className="rounded-2xl border p-3 space-y-2" style={{ borderColor: `${accent}55`, background: "rgba(255,255,255,0.03)" }}>
+              <input data-testid="widget-track-num" value={trackNum} onChange={e=>setTrackNum(e.target.value)} placeholder="Order # (e.g. 1042)" className="w-full bg-[#0D1117] border border-white/10 text-white text-sm rounded-md px-3 py-2 outline-none"/>
+              <input data-testid="widget-track-email" value={trackEmail} onChange={e=>setTrackEmail(e.target.value)} placeholder="Email on the order (optional)" className="w-full bg-[#0D1117] border border-white/10 text-white text-sm rounded-md px-3 py-2 outline-none"/>
+              <div className="flex gap-2">
+                <button data-testid="widget-track-submit" disabled={trackBusy || !trackNum.trim()} onClick={submitTracking} className="flex-1 text-xs font-bold px-3 py-2 rounded-md disabled:opacity-40" style={{ background: accent, color: "#0D1117" }}>
+                  {trackBusy ? "Looking…" : "Track order"}
+                </button>
+                <button data-testid="widget-track-cancel" onClick={() => { setTrackingFor(false); setTrackNum(""); setTrackEmail(""); }} className="text-xs font-bold px-3 py-2 rounded-md border border-white/15 text-white/70 hover:bg-white/5">Cancel</button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
       {/* Input row */}
       <div className="p-3 border-t border-white/5 flex gap-2 items-center" style={{ background: "rgba(255,255,255,0.02)" }}>
+        <input ref={photoInputRef} type="file" accept="image/*" onChange={e => { const f = e.target.files?.[0]; if (f) sendPhoto(f); e.target.value = ""; }} className="hidden" data-testid="widget-photo-input"/>
+        <button data-testid="widget-photo-btn" onClick={() => photoInputRef.current?.click()} disabled={visionBusy || busy} title="Send a photo — I'll find matching products" className="w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 transition-all disabled:opacity-40" style={{ background: "rgba(255,255,255,0.05)", color: accent }}>
+          <Camera size={16}/>
+        </button>
+        <button data-testid="widget-track-btn" onClick={startTracking} title="Track your order" className="w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 transition-all" style={{ background: "rgba(255,255,255,0.05)", color: accent }}>
+          <Package size={16}/>
+        </button>
         <button data-testid="widget-mic-btn" onMouseDown={startRecording} onMouseUp={stopRecording} onMouseLeave={stopRecording} onTouchStart={startRecording} onTouchEnd={stopRecording} className="w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 transition-all" style={{ background: recording ? "#F56565" : "rgba(255,255,255,0.05)", color: recording ? "#fff" : accent, transform: recording ? "scale(1.08)" : "scale(1)" }} title="Hold to talk (one voice message)">
           {recording ? <MicOff size={16}/> : <Mic size={16}/>}
         </button>
@@ -529,6 +670,44 @@ export default function Widget({ tenant, colors, catalog, embedded = false, onCl
       <div className="px-3 pb-2 text-center">
         <p className="text-[9px] uppercase tracking-widest text-white/25 font-bold">Powered by Rozio-Killer AI</p>
       </div>
+    </div>
+  );
+}
+
+
+// ============ Package journey timeline (Ordered → Packed → Shipped → Delivered) ============
+function TrackingTimeline({ data, accent, testIdSuffix }) {
+  const stages = data.stages || [];
+  return (
+    <div className="mt-3 rounded-xl border p-3" style={{ borderColor: `${accent}44`, background: "rgba(255,255,255,0.03)" }} data-testid={`widget-tracking-${testIdSuffix}`}>
+      <div className="flex items-center gap-1.5 mb-3">
+        <Package size={12} style={{ color: accent }}/>
+        <p className="text-[10px] uppercase tracking-widest font-bold" style={{ color: accent }}>Order {data.order_number}</p>
+      </div>
+      <div className="relative">
+        {/* Connector line */}
+        <div className="absolute top-2.5 left-2.5 right-2.5 h-0.5 bg-white/10"/>
+        <div className="absolute top-2.5 left-2.5 h-0.5" style={{ background: accent, width: `${(stages.filter(s=>s.done).length - 1) / Math.max(1, stages.length - 1) * 100}%`, maxWidth: "calc(100% - 20px)" }}/>
+        <div className="relative flex justify-between">
+          {stages.map((s, i) => (
+            <div key={s.key} className="flex flex-col items-center" data-testid={`widget-tracking-stage-${testIdSuffix}-${s.key}`}>
+              <div className="w-5 h-5 rounded-full flex items-center justify-center relative" style={{ background: s.done ? accent : "rgba(255,255,255,0.10)", boxShadow: s.done ? `0 0 12px ${accent}88` : "none" }}>
+                {s.done ? <CheckCircle2 size={10} className="text-[#0D1117]"/> : <Circle size={8} className="text-white/40"/>}
+              </div>
+              <p className={`text-[9px] mt-1.5 font-bold uppercase tracking-wider ${s.done ? "text-white" : "text-white/40"}`}>{s.label}</p>
+              {s.at && s.done && <p className="text-[8px] text-white/40 mt-0.5">{new Date(s.at).toLocaleDateString(undefined, { month: "short", day: "numeric" })}</p>}
+            </div>
+          ))}
+        </div>
+      </div>
+      {data.tracking_url && (
+        <a href={data.tracking_url} target="_blank" rel="noopener noreferrer" data-testid={`widget-tracking-link-${testIdSuffix}`} className="mt-3 inline-flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest hover:underline" style={{ color: accent }}>
+          Carrier tracking &rarr;
+        </a>
+      )}
+      {data.tracking_number && !data.tracking_url && (
+        <p className="mt-2 text-[10px] text-white/50 font-mono">Tracking # {data.tracking_number}</p>
+      )}
     </div>
   );
 }
