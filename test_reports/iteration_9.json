@@ -1,0 +1,32 @@
+{
+  "summary": "Wrote 6 regression tests for /api/chat/stream covering (1) no re-greeting on first message, (2) no re-greeting when user says 'hi', (3) session memory (iPhone across turns), (4) no self-repetition over 4 turns, (5) concise voice-friendly length, (6) Spanish reply with [[LANG:es]] marker and no greeting. ALL 6 tests were BLOCKED — could not verify the fix because the Emergent LLM key budget is exhausted. Every SSE call returned an error event: 'litellm.BadRequestError: OpenAIException - Budget has been exceeded! Current cost: 1.437993, Max budget: 1.4'. Endpoint infrastructure itself is healthy: /api/chat/stream returns HTTP 200 and emits valid SSE 'data: {...}' frames including the error frame. Static review of the system prompt (server.py lines 563-582) shows the ABSOLUTE RULES section is present and correctly forbids all listed greetings ('Hi/Hello/Hey/How can I help/How can I assist/How are you doing/Good to see you') and repetition, and instructs LANG marker + memory usage. Fix looks correct in code; it just cannot be exercised against the live model until the LLM budget is topped up.",
+  "backend_issues": {
+    "critical": [
+      {"endpoint": "/api/chat/stream", "issue": "Emergent LLM budget exhausted (Max budget: 1.4, current: 1.44). Every chat request fails with litellm.BadRequestError. Blocks all end-to-end verification of the anti-greeting / memory / language fixes. Main agent must top up EMERGENT_LLM_KEY budget before re-running tests.", "priority": "CRITICAL"}
+    ],
+    "minor": []
+  },
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_chat_stream.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [
+    "URGENT: Top up / rotate EMERGENT_LLM_KEY — budget has been exceeded, so all chat requests are hard-failing regardless of prompt correctness.",
+    "After budget restored, re-run: pytest /app/backend/tests/test_chat_stream.py -v — the 6 tests will assert no greeting, session memory, no repetition, concise length, and Spanish LANG marker.",
+    "Code-level: system prompt fix at server.py:563-582 looks correct — no code change needed unless tests fail after budget is restored."
+  ],
+  "critical_code_review_comments": [
+    "server.py:607 uses LlmChat(session_id=req.session_id) — session memory relies on emergentintegrations persisting history by session_id. Confirm this backend actually keeps in-process/DB history keyed by session_id; if not, the 'remember earlier context' rule cannot work even with a perfect prompt.",
+    "server.py:569 lists banned greetings as prose inside a long paragraph. Consider also adding a post-processing regex to strip a leading greeting sentence as a belt-and-braces guard in case the model still slips (defense in depth).",
+    "server.py:575 requires the model to emit [[LANG:xx]] before ANY other text — instruction is clear but there's no server-side validation that the marker was actually emitted; consider injecting the marker server-side if missing, so downstream TTS/voice pipeline never breaks."
+  ],
+  "updated_files": ["/app/backend/tests/test_chat_stream.py"],
+  "success_rate": {"backend": "0% (0/6 executed — all blocked by LLM budget, endpoint returns 200 with error SSE frame)", "frontend": "N/A (backend-only request)"},
+  "test_credentials": "Demo tenant id=59d01823-0f99-4ee3-a24a-6d162645771e used as user_id in payloads.",
+  "seed_data_creation": "None. Reuses existing demo tenant catalog (iPhone 17 Pro $1099, MacBook Pro $1999, etc.).",
+  "retest_needed": true,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Test file /app/backend/tests/test_chat_stream.py is ready and complete. It streams SSE from /api/chat/stream, strips [[LANG:xx]] marker, and asserts no greeting prefix + memory + no repetition + concise length + Spanish. Simply rerun with: pytest /app/backend/tests/test_chat_stream.py -v --tb=short --junitxml=/app/test_reports/pytest/pytest_results.xml once EMERGENT_LLM_KEY budget is topped up. Do NOT modify greeting regex list without also updating server.py:569.",
+  "rca of the issue": "Root cause of test-run failure: Emergent LLM budget cap hit (max 1.4, spent 1.44). Not a code bug. Reproduction: POST {session_id, message, user_id} to /api/chat/stream — server dutifully starts the SSE stream, LlmChat.stream_message raises litellm.BadRequestError on first token, our error branch (server.py:621-623) yields 'data: {\"error\": \"...\"}'. Mitigation: increase or reset the EMERGENT_LLM_KEY budget, then re-run the pytest suite."
+}
