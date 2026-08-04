@@ -52,7 +52,35 @@ html, body, #root {
 .neon-glow { box-shadow: 0 0 24px rgba(72,187,120,0.18); }
 .neon-glow-hover:hover { box-shadow: 0 0 24px rgba(72,187,120,0.32); }
 
-/* Pulsing dot */
+/* Face animations - subtle life */
+@keyframes face-breathe {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.015); }
+}
+@keyframes face-sway {
+  0%, 100% { transform: translateX(0) rotate(0deg); }
+  25% { transform: translateX(-2px) rotate(-0.4deg); }
+  75% { transform: translateX(2px) rotate(0.4deg); }
+}
+@keyframes face-blink {
+  0%, 92%, 100% { filter: none; }
+  94%, 98% { filter: brightness(0.85) contrast(1.1); }
+}
+.face-alive {
+  animation: face-breathe 4s ease-in-out infinite, face-sway 9s ease-in-out infinite, face-blink 6s ease-in-out infinite;
+  will-change: transform, filter;
+}
+.face-speaking {
+  animation: face-breathe 1.6s ease-in-out infinite, face-sway 3s ease-in-out infinite;
+}
+
+/* Voice-only fullscreen halo */
+@keyframes halo-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(72,187,120,0.35), 0 0 60px 20px rgba(72,187,120,0.15); }
+  50% { box-shadow: 0 0 0 24px rgba(72,187,120,0), 0 0 80px 40px rgba(72,187,120,0.25); }
+}
+.voice-halo { animation: halo-pulse 1.8s ease-in-out infinite; }
+
 @keyframes pulse-ring {
   0% { box-shadow: 0 0 0 0 rgba(72,187,120,0.7); }
   70% { box-shadow: 0 0 0 12px rgba(72,187,120,0); }

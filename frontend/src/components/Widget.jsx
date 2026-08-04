@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from "react";
-import { Bot, Send, X, Loader2, Mic, MicOff, Volume2, Sparkles, PhoneCall, PhoneOff } from "lucide-react";
+import { Bot, Send, X, Loader2, Mic, MicOff, Volume2, Sparkles, PhoneCall, PhoneOff, ShoppingCart } from "lucide-react";
 import { API } from "@/lib/api";
 import { toast } from "sonner";
 
@@ -8,17 +8,28 @@ function avatarUrl(gender) {
   return `${backend}/api/public/avatar/${gender}.jpg`;
 }
 
-// Parse action markers out of streaming text: [[ACTION:escalate]] or [[ACTION:book:<slot>]]
+// Parse action + language + buy markers from streaming text
 function extractActions(text) {
   const actions = [];
   const re = /\[\[ACTION:([a-zA-Z_]+)(?::([^\]]+))?\]\]/g;
-  let clean = text;
   let m;
   while ((m = re.exec(text)) !== null) {
     actions.push({ kind: m[1].toLowerCase(), arg: (m[2] || "").trim() });
   }
-  clean = text.replace(re, "").trim();
-  return { clean, actions };
+  const langMatch = text.match(/\[\[LANG:([a-z]{2})\]\]/i);
+  const lang = langMatch ? langMatch[1].toLowerCase() : null;
+  const buys = [];
+  const buyRe = /\[\[BUY:([^\|\]]+)\|([^\]]+)\]\]/g;
+  let bm;
+  while ((bm = buyRe.exec(text)) !== null) {
+    buys.push({ name: bm[1].trim(), url: bm[2].trim() });
+  }
+  let clean = text
+    .replace(re, "")
+    .replace(/\[\[LANG:[a-z]{2}\]\]/gi, "")
+    .replace(buyRe, "")
+    .trim();
+  return { clean, actions, lang, buys };
 }
 
 export default function Widget({ tenant, colors, catalog }) {
@@ -39,6 +50,7 @@ export default function Widget({ tenant, colors, catalog }) {
   const [lipsyncMode, setLipsyncMode] = useState(false);
   const [videoUrl, setVideoUrl] = useState(null);
   const [generatingVideo, setGeneratingVideo] = useState(false);
+  const [replyLang, setReplyLang] = useState("en");
   const [callActive, setCallActive] = useState(false);
   const [callListening, setCallListening] = useState(false);
   const scrollRef = useRef(null);
@@ -54,21 +66,28 @@ export default function Widget({ tenant, colors, catalog }) {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
   }, [messages, busy]);
 
-  const playTTS = useCallback(async (text) => {
+  const playTTS = useCallback(async (text, langHint) => {
     if (!voiceMode || !text) return;
-    // In voice-call mode use browser's built-in speechSynthesis for near-zero latency
+    const lang = (langHint || replyLang || "en").toLowerCase();
+    // In voice-call mode use browser's built-in speechSynthesis for near-zero latency + native language voice
     if (callActiveRef.current && "speechSynthesis" in window) {
       try {
         window.speechSynthesis.cancel();
         const u = new SpeechSynthesisUtterance(text.slice(0, 1200));
         u.rate = 1.02; u.pitch = 1.0; u.volume = 1.0;
-        // Prefer a voice matching the gender
+        // Voice selection: prefer voice matching lang + gender
         const voices = window.speechSynthesis.getVoices();
         const g = (tenant?.avatar_gender || "female").toLowerCase();
-        const pick = voices.find(v => (g === "male" && /male|david|daniel|guy/i.test(v.name))
-                                  || (g === "female" && /female|samantha|zira|jenny|aria/i.test(v.name))
-                                  || (g === "neutral" && /neutral|google/i.test(v.name)));
+        // Match language first (lang code prefix like 'es', 'es-ES', 'es-MX')
+        const langVoices = voices.filter(v => (v.lang || "").toLowerCase().startsWith(lang));
+        const pool = langVoices.length ? langVoices : voices;
+        let pick = pool.find(v =>
+          (g === "male" && /male|david|daniel|guy|jorge|carlos|hans|hiroshi|takumi|wang/i.test(v.name)) ||
+          (g === "female" && /female|samantha|zira|jenny|aria|maria|helena|marlene|kyoko|xiaoxiao|paulina/i.test(v.name))
+        );
+        if (!pick) pick = pool[0];
         if (pick) u.voice = pick;
+        u.lang = pick?.lang || lang;
         setSpeaking(true);
         return new Promise((resolve) => {
           u.onend = () => { setSpeaking(false); resolve(); };
@@ -77,7 +96,7 @@ export default function Widget({ tenant, colors, catalog }) {
         });
       } catch {}
     }
-    // Otherwise use OpenAI TTS (higher quality but ~1-2s latency)
+    // Otherwise use OpenAI TTS (multi-language native, higher quality)
     try {
       const r = await fetch(`${API}/voice/tts`, {
         method: "POST", headers: {"Content-Type":"application/json"},
@@ -95,7 +114,7 @@ export default function Widget({ tenant, colors, catalog }) {
         });
       }
     } catch { setSpeaking(false); }
-  }, [voiceMode, tenant]);
+  }, [voiceMode, tenant, replyLang]);
 
   const escalate = useCallback(async () => {
     if (!tenant?.id) return;
@@ -149,16 +168,17 @@ export default function Widget({ tenant, colors, catalog }) {
             const p = JSON.parse(line.slice(6));
             if (p.delta) {
               acc += p.delta;
-              const { clean } = extractActions(acc);
-              setMessages(m => { const c=[...m]; c[c.length-1]={role:"assistant",text:clean}; return c; });
-            }
+              const { clean, lang } = extractActions(acc);
+              if (lang && lang !== replyLang) setReplyLang(lang);
+              setMessages(m => { const c=[...m]; c[c.length-1]={role:"assistant",text:clean}; return c; });            }
           } catch {}
         }
       }
-      // Final: check for action markers
-      const { clean, actions } = extractActions(acc);
-      setMessages(m => { const c=[...m]; c[c.length-1]={role:"assistant",text:clean}; return c; });
-      // Play TTS with clean text
+      // Final: check for action markers + language + buy
+      const { clean, actions, lang, buys } = extractActions(acc);
+      if (lang) setReplyLang(lang);
+      setMessages(m => { const c=[...m]; c[c.length-1]={role:"assistant",text:clean, buys}; return c; });
+      // Play TTS with clean text (pass lang so browser picks matching voice)
       if (clean && voiceMode) {
         if (lipsyncMode && tenant?.id) {
           setGeneratingVideo(true);
@@ -178,10 +198,10 @@ export default function Widget({ tenant, colors, catalog }) {
               audio.play();
               if (dd.error) toast.error(`Lipsync fallback: ${dd.error.slice(0,60)}`);
             }
-          } catch { await playTTS(clean); }
+          } catch { await playTTS(clean, lang); }
           finally { setGeneratingVideo(false); }
         } else {
-          await playTTS(clean);
+          await playTTS(clean, lang);
         }
       }
       // Execute actions AFTER speaking
@@ -284,6 +304,21 @@ export default function Widget({ tenant, colors, catalog }) {
 
   return (
     <div data-testid="sandbox-widget" className="absolute bottom-6 right-6 w-[360px] rounded-2xl overflow-hidden shadow-2xl flex flex-col" style={{ background: bg, border: "1px solid rgba(255,255,255,0.08)", maxHeight: "82%" }}>
+      {/* VOICE-ONLY FULLSCREEN OVERLAY */}
+      {callActive && (
+        <div data-testid="voice-only-overlay" className="absolute inset-0 z-30 flex flex-col items-center justify-center p-6" style={{ background: `radial-gradient(circle at center, ${accent}25 0%, ${bg} 70%)` }}>
+          <div className={`w-40 h-40 rounded-full overflow-hidden mb-6 voice-halo ${callListening || speaking ? "face-speaking" : "face-alive"}`} style={{ border: `3px solid ${accent}` }}>
+            <img src={avatarUrl(gender)} alt="AI" className="w-full h-full object-cover"/>
+          </div>
+          <p className="uppercase tracking-[0.3em] text-xs font-bold mb-2" style={{ color: accent }}>
+            {callListening ? "LISTENING" : speaking ? "SPEAKING" : "IN CALL"}
+          </p>
+          <p className="text-white/70 text-sm mb-8 text-center">Just talk — I'm listening in any language.</p>
+          <button data-testid="widget-endcall-fullscreen" onClick={endCall} className="w-16 h-16 rounded-full flex items-center justify-center shadow-2xl" style={{ background: "#F56565", color: "#fff" }}>
+            <PhoneOff size={24}/>
+          </button>
+        </div>
+      )}
       {/* Avatar */}
       <div className="relative">
         {videoUrl ? (
@@ -327,6 +362,15 @@ export default function Widget({ tenant, colors, catalog }) {
               {m.text || <Loader2 className="animate-spin" size={14}/>}
               {m.gcal && (
                 <a href={m.gcal} target="_blank" rel="noopener noreferrer" data-testid="widget-gcal-link" className="mt-1.5 block text-xs font-bold underline" style={{ color: accent }}>Add to Google Calendar &rarr;</a>
+              )}
+              {m.buys && m.buys.length > 0 && (
+                <div className="mt-2 flex flex-col gap-1.5">
+                  {m.buys.map((b, bi) => (
+                    <a key={bi} href={b.url} target="_blank" rel="noopener noreferrer" data-testid={`widget-buy-btn-${bi}`} className="inline-flex items-center justify-center gap-1.5 text-xs font-bold px-3 py-2 rounded-md" style={{ background: accent, color: "#1A202C" }}>
+                      <ShoppingCart size={12}/> Buy {b.name}
+                    </a>
+                  ))}
+                </div>
               )}
             </div>
           </div>

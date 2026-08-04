@@ -492,14 +492,27 @@ async def crawl_url(payload: dict, user=Depends(get_current_user)):
         s.decompose()
     body_text = " ".join(soup.get_text(" ").split())[:8000]
     imgs = []
+    prod_urls = []
     from urllib.parse import urljoin
-    for img in soup.find_all("img")[:40]:
+    for img in soup.find_all("img")[:80]:
         src = img.get("src") or img.get("data-src")
         if not src: continue
         if src.startswith("//"): src = "https:" + src
         elif src.startswith("/"): src = urljoin(url, src)
-        if src.startswith("http") and src not in imgs and any(ext in src.lower() for ext in [".jpg", ".jpeg", ".png", ".webp"]):
-            imgs.append(src)
+        if not (src.startswith("http") and any(ext in src.lower() for ext in [".jpg", ".jpeg", ".png", ".webp"])):
+            continue
+        if src in imgs:
+            continue
+        # find enclosing anchor to associate a product url
+        a = img.find_parent("a")
+        href = a.get("href") if a and a.get("href") else None
+        if href:
+            if href.startswith("//"): href = "https:" + href
+            elif href.startswith("/"): href = urljoin(url, href)
+            elif not href.startswith("http"): href = urljoin(url, href)
+        prod_url = href if href and href.startswith("http") else url
+        imgs.append(src)
+        prod_urls.append(prod_url)
         if len(imgs) >= 10: break
     system = (
         "You are a web-page extractor. Given HTML text content from a business website, extract 3-6 top items "
@@ -529,6 +542,7 @@ async def crawl_url(payload: dict, user=Depends(get_current_user)):
     items = parsed.get("items") or []
     for i, it in enumerate(items):
         it["image"] = imgs[i] if i < len(imgs) else (imgs[0] if imgs else "https://images.unsplash.com/photo-1580927752452-89d86da3fa0a?w=400")
+        it["url"] = prod_urls[i] if i < len(prod_urls) else url
         it["price"] = it.get("price", "Contact for pricing")
     delivery = parsed.get("delivery") or {"US": "3-5 business days", "EU": "5-8 business days", "APAC": "7-12 business days"}
     await db.users.update_one({"id": user["id"]}, {"$set": {
@@ -553,6 +567,7 @@ async def chat_stream(req: ChatReq):
         f"Site description: {tenant.get('site_description','') if tenant else ''}. "
         f"\n\nYOUR STYLE: Talk like a real person on a phone call. Vary your sentence length. Use natural fillers occasionally like 'sure', 'got it', 'let me check'. NEVER open with the same greeting twice - if you already greeted, jump straight into helpful conversation. Be concise (1-3 sentences per reply). "
         f"Auto-detect the user's language from every message and ALWAYS reply in that language. "
+        f"\n\nLANGUAGE MARKER (VERY IMPORTANT): At the very start of EVERY reply, emit EXACTLY '[[LANG:xx]]' where xx is the 2-letter ISO 639-1 code of the language you are about to reply in (en, es, fr, de, it, pt, ja, zh, ar, hi, ko, ru, nl, sv, pl, tr, etc). Do NOT emit any other text before the marker. "
         f"\n\nSPECIAL ACTIONS - VERY IMPORTANT: "
         f"When the user asks to speak with a human, agent, representative, or wants escalation, "
         f"first give a short acknowledgement (1 sentence), then emit EXACTLY this marker on its own line: [[ACTION:escalate]] "
@@ -564,12 +579,12 @@ async def chat_stream(req: ChatReq):
     catalog_lines = []
     if catalog:
         for p in catalog[:10]:
-            catalog_lines.append(f"- {p.get('name','')} | {p.get('price','')} | {p.get('description','')} | image: {p.get('image','')}")
+            catalog_lines.append(f"- {p.get('name','')} | {p.get('price','')} | url: {p.get('url','')} | {p.get('description','')} | image: {p.get('image','')}")
     if catalog_lines:
         system += (
             "\n\n=== LIVE SITE INVENTORY (use these real items when the user asks about products/services/pricing) ===\n"
             + "\n".join(catalog_lines)
-            + "\n\nWhen recommending, mention the item name and price naturally, and if visitor wants to buy or book, offer to help right away. "
+            + "\n\nWhen recommending an item, mention name+price naturally. When the visitor expresses buying intent (e.g. 'I'll take it', 'buy', 'add to cart'), emit EXACTLY this marker on its own line: [[BUY:<product name>|<product url>]] using the exact url from the inventory above. Never invent URLs. "
         )
     if delivery:
         system += f"\nDelivery windows: {json.dumps(delivery)}. When asked about shipping/timeline by region, cite these accurately. "

@@ -250,14 +250,14 @@ export default function Dashboard() {
 
       {/* Live Preview Modal (full-screen sandbox) */}
       <Dialog open={previewOpen} onOpenChange={setPreviewOpen}>
-        <DialogContent className="bg-[#0D1117] border-white/10 text-white max-w-6xl w-[95vw] h-[90vh] p-0 overflow-hidden">
-          <DialogHeader className="px-6 py-4 border-b border-white/10">
+        <DialogContent className="bg-[#0D1117] border-white/10 text-white max-w-6xl w-[95vw] h-[90vh] p-0 overflow-hidden flex flex-col">
+          <DialogHeader className="px-6 py-3 border-b border-white/10 flex-shrink-0">
             <DialogTitle className="font-display text-xl">Live Preview &mdash; publish-ready sandbox</DialogTitle>
           </DialogHeader>
-          <div className="relative flex-1 h-full dot-grid noise" data-testid="preview-modal-canvas">
+          <div className="relative flex-1 min-h-0 dot-grid noise overflow-hidden" data-testid="preview-modal-canvas">
             <MouseGradient color={colors.accent_color} intensity={0.18} />
-            <div className="absolute inset-0 flex items-center justify-center p-8">
-              <div className="w-full max-w-2xl bg-[#1A202C] border border-white/10 rounded-lg p-8 opacity-90 relative z-10">
+            <div className="absolute inset-0 flex items-center justify-center p-8 pointer-events-none">
+              <div className="w-full max-w-2xl bg-[#1A202C] border border-white/10 rounded-lg p-8 opacity-90">
                 <div className="h-2 w-24 rounded bg-white/10 mb-4"></div>
                 <div className="h-10 w-3/4 rounded bg-white/10 mb-6"></div>
                 <div className="h-4 w-full rounded bg-white/5 mb-2"></div>

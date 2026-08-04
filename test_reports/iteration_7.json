@@ -1,0 +1,59 @@
+{
+  "summary": "Phase 9 iteration 7: 6/6 backend tests pass and full frontend flow green (0 console errors on /dashboard + /admin). CRITICAL bug found & fixed in /api/knowledge/crawl: NameError 'prod_urls is not defined' at server.py:532 (500 on every crawl). Applied minimal fix: build imgs[] + prod_urls[] from anchor+img pairs so every catalog item now includes a 'url' field. Verified: crawl returns 4 Apple items each with 'url' key. Known limitation retained: apple.com/shop/buy-iphone is JS-heavy so static requests.get finds no product anchors, and all 4 urls fall back to the crawled URL (documented in test). [[LANG:xx]] marker verified at very start of every chat reply. [[BUY:name|url]] marker verified when visitor expresses buying intent ('I want to buy the iPhone. Add it to my cart.'). Voice-only fullscreen overlay: startcall → overlay appears (with .voice-halo + .face-alive/.face-speaking inside), endcall-fullscreen dismisses it. Preview modal now renders the Widget inside (360x423, product cards + avatar visible). Avatar PNGs still ~2MB from OpenAI gpt-image-1. One minor miss reported: main idle <img data-testid=widget-avatar-image> does NOT carry class 'face-alive' (only the voice-overlay avatar container does); animated breathing/sway isn't applied to the main widget avatar image.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "/api/knowledge/crawl", "issue": "Static requests.get crawler cannot resolve JS-rendered product anchors (apple.com), so all extracted items get the same fallback URL. Consider Playwright/browserless for JS-heavy shops."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "Widget.jsx main avatar <img>", "issue": "class 'face-alive' is NOT applied to the idle main avatar image (data-testid=widget-avatar-image). It only lives inside the voice-only-overlay avatar container. Continuous breathing/sway/blink animation therefore does not run on the primary embedded widget avatar as described in Phase 9 feature (1).", "selector": "[data-testid=\"widget-avatar-image\"]", "priority": "MEDIUM"}
+    ],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "backend_tests_passed": [
+    "test_crawl_returns_distinct_product_urls (after fix; catalog=4 items, every item has 'url' string starting with http)",
+    "test_chat_lang_marker_at_start (reply starts with '[[LANG:xx]]')",
+    "test_chat_buy_marker_on_intent ('[[BUY:...]]' emitted on buying intent)",
+    "test_avatar_still_returns_png[male] (image/png ~2MB)",
+    "test_avatar_still_returns_png[female] (image/png ~2MB)",
+    "test_avatar_still_returns_png[neutral] (image/png ~2MB)"
+  ],
+  "frontend_tests_passed": [
+    "demo login → /dashboard, sandbox-widget rendered",
+    "open-preview-btn → dialog opens with sandbox-widget INSIDE (360x423) - product cards + avatar visible",
+    "widget-startcall-btn → voice-only-overlay appears, contains .voice-halo and .face-alive/.face-speaking classes",
+    "widget-endcall-fullscreen → overlay dismissed",
+    "Branding tab: avatar-gender-male/female/neutral tiles all present",
+    "Matrix tab: GoogleCalendarCard visible",
+    "admin@rozio-killer.com login → /admin loads with 4 tabs",
+    "0 console errors across /dashboard and /admin"
+  ],
+  "test_report_links": [
+    "/app/backend/tests/test_iteration7_phase9.py",
+    "/app/test_reports/pytest/iter7_results.xml"
+  ],
+  "action_items": [
+    "Add class 'face-alive' (and swap to 'face-speaking' when speaking/callListening) to the main avatar <img data-testid=widget-avatar-image> at Widget.jsx line ~329 so breathing/sway/blink animation actually runs on the primary widget avatar - not only inside the fullscreen voice overlay.",
+    "(Non-blocking) Improve crawler for JS-rendered sites: static requests.get can't find product anchors on apple.com etc. Consider Playwright fallback or a lightweight browserless render so 'url' field per product yields distinct product URLs."
+  ],
+  "critical_code_review_comments": [
+    "BUG FIXED by testing agent: /api/knowledge/crawl was 500-ing on every request due to undefined `prod_urls` variable (server.py line 532). Applied minimal safe fix: build imgs[] and prod_urls[] together via find_parent('a') so each item has a real product URL when the anchor exists, otherwise falls back to the crawled URL.",
+    "server.py is 1200 lines - overdue for split into routers (auth/chat/knowledge/admin/avatar).",
+    "Startup still sequentially generates 3 gpt-image-1 avatars → ~45s cold start; hot-reload on any file edit under /app/backend causes ~45s downtime and test flakiness (timeouts on first login attempt).",
+    "Widget.jsx: face-alive class is only wired into the fullscreen voice overlay - the main small avatar never uses the CSS keyframes (face-breathe/sway/blink) defined in index.css."
+  ],
+  "updated_files": [
+    "/app/backend/server.py (fixed NameError prod_urls at /api/knowledge/crawl; added anchor→href extraction)",
+    "/app/backend/tests/test_iteration7_phase9.py (new regression suite - 6 tests)"
+  ],
+  "success_rate": {"backend": "100% (6/6 after fix)", "frontend": "88% (7/8 flows perfect; only face-alive on main avatar is missing)"},
+  "test_credentials": "admin@rozio-killer.com / Admin@12345, demo@client.com / Demo@12345 (unchanged)",
+  "seed_data_creation": "Crawl overwrote demo tenant catalog with 4 Apple products (unchanged from phase 8). Chat sessions test-cat-*, test-lang-*, test-buy-* created but no persistent side-effects.",
+  "retest_needed": true,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Phase 9 fixes: (1) preview modal now renders Widget - green; (2) voice-only-overlay + halo/breathe/speaking CSS classes exist in overlay - green; (3) BUY + LANG markers emitted by gpt-4o reliably - green; (4) crawler product URL extraction - fixed a NameError in server.py:532, now works but JS-heavy sites still fall back. OUTSTANDING for main agent: apply .face-alive/.face-speaking class to the main widget avatar <img> at Widget.jsx ~line 329 (currently only in fullscreen overlay). Backend cold-start ~45s (3 gpt-image-1 generations sequential); when running pytest after any backend edit, sleep 45s or the fixture login times out.",
+  "rca of the issue": "server.py /api/knowledge/crawl referenced `prod_urls` list at line 532 but the previous implementation only built an `imgs` list. As delivered by main agent, every crawl POST returned 500 NameError. Reproduction: `curl -X POST /api/knowledge/crawl -H 'Authorization: Bearer <demo-token>' -d '{\"url\":\"https://www.apple.com/shop/buy-iphone\"}'` → HTTP 500 with backend traceback `NameError: name 'prod_urls' is not defined`. Mitigation: refactor the img loop to also capture the enclosing <a href=...> and append both to imgs[] + prod_urls[] in lockstep; when no anchor present, fallback to the crawled URL. Every catalog item now has a valid 'url' field, satisfying the Phase 9 contract for BUY-marker product links."
+}
