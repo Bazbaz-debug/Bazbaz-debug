@@ -16,6 +16,19 @@ Build a responsive full-stack multi-tenant SaaS app that outperforms Rozio AI. C
 - Streaming chat via SSE (fetch reader, not EventSource), token-buffering disabled.
 - Storage: Emergent Object Storage via `EMERGENT_LLM_KEY`, init at startup.
 
+## Implemented (2026-02-05)
+Phase 9 — Booking engine + Bot customization:
+- **Weekly business hours**: per-tenant `business_hours` map (Mon-Sun × {start, end, enabled}) governing when the AI is allowed to offer slots.
+- **Blocked times**: one-off `blocked_slots` (date+start+end+note) AND weekly `recurring_blocks` (day+start+end). Both enforced in `POST /api/booking/confirm` and excluded from `GET /api/booking/available-slots`.
+- **Meeting duration**: per-tenant `meeting_duration` (15/30/45/60/90 min) drives calendar block length.
+- **Zoom link**: `zoom_meeting_link` field auto-included in confirmation email, Google Calendar invite location, and customer SMS.
+- **Booking channels on confirm**: (a) confirmation email to customer + business + notification_email, (b) Google Calendar event on both sides when tenant has OAuth linked, (c) SMS to business owner AND customer (if `customer_phone` provided) via Telnyx.
+- **AI system prompt** now injects real available windows so the chatbot only offers non-blocked, in-hours slots and emits `[[ACTION:book:<ISO>]]` with ISO start time.
+- **Bot customization**: `bot_name`, `bot_tagline`, `bot_greeting`, `bot_tone` (friendly/professional/casual/luxury), and `logo_url` — surfaced in widget header + Widget first message + system prompt persona.
+- **Logo upload**: `POST /api/me/logo` accepts PNG/JPG/WEBP/SVG up to 5MB, stored in Emergent Object Storage; `DELETE /api/me/logo` clears it.
+- **Dashboard**: two new tabs — `Bot` (identity + logo upload + tone selector) and `Booking` (Zoom, duration, timezone, weekly hours grid, one-off blocks, recurring blocks, live slot preview grid).
+- Testing agent iteration 10: 16/16 backend pytest + full frontend tabs/interactions pass.
+
 ## Implemented (2026-02-04)
 Phase 8c (2026-02-04) — Chat/call split + premium chat UI:
 - **No face in chat mode**: removed the inline avatar image from the widget. Chat is now text-only, focused, and modern.
