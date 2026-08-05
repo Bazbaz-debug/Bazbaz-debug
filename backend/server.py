@@ -1,4 +1,4 @@
-from fastapi import FastAPI, APIRouter, HTTPException, Depends, UploadFile, File, Header, Query
+from fastapi import FastAPI, APIRouter, HTTPException, Depends, UploadFile, File, Header, Query, Request
 from fastapi.responses import StreamingResponse, Response
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from dotenv import load_dotenv
@@ -1125,21 +1125,23 @@ async def chat_stream(req: ChatReq):
         corrections = await db.training_corrections.find({"user_id": tenant_id}, {"_id": 0}).sort("created_at", -1).to_list(20)
         if corrections:
             lines = []
-            injected_ids = []
+            used_ids = []  # only count corrections actually relevant to this visitor's question
+            msg_kw = _keywords(req.message)
             for c in corrections:
                 q = (c.get("question") or "").strip()
                 a = (c.get("corrected") or "").strip()
                 if a:
                     lines.append(f"- If the visitor asks about \"{q or 'this topic'}\", answer with: {a}")
-                    injected_ids.append(c.get("id"))
+                    if msg_kw and (msg_kw & _keywords(q)):
+                        used_ids.append(c.get("id"))
             if lines:
                 system += (
                     "\n\n=== APPROVED ANSWERS (highest priority — the business has explicitly approved these responses, prefer them over your own) ===\n"
                     + "\n".join(lines)
                 )
-                # Analytics: count how often each approved answer is surfaced to the AI
-                if injected_ids:
-                    await db.training_corrections.update_many({"id": {"$in": injected_ids}}, {"$inc": {"used_count": 1}, "$set": {"last_used_at": now_iso()}})
+                # Analytics: count only the approved answers relevant to this question
+                if used_ids:
+                    await db.training_corrections.update_many({"id": {"$in": used_ids}}, {"$inc": {"used_count": 1}, "$set": {"last_used_at": now_iso()}})
 
     chat = LlmChat(api_key=EMERGENT_LLM_KEY, session_id=req.session_id, system_message=system).with_model("openai", "gpt-4o")
 
@@ -1868,7 +1870,7 @@ async def visitor_poll_pending(session_id: str, tenant_id: str = Query(...), sin
     return {"messages": msgs, "server_time": now_iso()}
 
 @api_router.get("/messages/stream")
-async def messages_stream(token: str = Query(...)):
+async def messages_stream(request: Request, token: str = Query(...)):
     """Server-Sent Events stream that pushes conversation updates to the owner's
     inbox in near real-time (no manual refresh). Auth via token query param
     because EventSource cannot set Authorization headers."""
@@ -1883,6 +1885,8 @@ async def messages_stream(token: str = Query(...)):
         yield f"data: {json.dumps({'type': 'ping'})}\n\n"
         # Cap the stream lifetime; EventSource auto-reconnects.
         for _ in range(300):  # ~10 min at 2s
+            if await request.is_disconnected():
+                break
             convs = await db.conversations.find(
                 {"tenant_id": tenant_id, "last_at": {"$gt": last}}, {"_id": 0}
             ).sort("last_at", 1).to_list(50)

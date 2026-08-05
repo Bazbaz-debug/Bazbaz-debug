@@ -51,14 +51,27 @@ Phase 2 (SaaS backend):
 - `GET /api/me/activity` · `GET/PUT/DELETE /api/me/integrations` · `POST /api/admin/impersonate/{user_id}`
 - `GET /api/admin/audit?q=` · `GET /api/me/training/transcripts` · `GET/POST/DELETE /api/me/training/corrections|correct`
 
+## What's been implemented — 05 Aug 2026 (Kairo rebrand + 5 features)
+- ✅ **Rebrand → Kairo** — new SVG logo (`components/KairoLogo.jsx`), all "Rozio-Killer" text replaced across frontend + backend (emails, loader.js, SMS, voice), index.html title/description
+- ✅ **Landing redesign** (`pages/Landing.jsx`) — centered gradient hero, "IN DEMO MODE · UPWORK CLIENTS ONLY" badge, platform marquee, use-case bento (Shopify / ads / SMB), 8-feature grid, "It's not open yet — reserve your spot" Book-on-Upwork block, testimonials, big footer. Design blueprint in `/app/design_guidelines.json`
+- ✅ **Admin Platform Keys** — `GET/PUT /api/admin/platform-keys`; master admin adds a **Resend** API key + sender email in the System tab (Fernet-encrypted, masked readback). `send_email_sync` prefers the admin-configured key → live emails without touching .env
+- ✅ **Approved-Answer Analytics** — `GET /api/me/training/analytics`; `used_count`/`last_used_at` incremented in `chat_stream` only for corrections whose keywords match the visitor's question. Training tab shows totals + ranked "which answers pay off" list
+- ✅ **RAG chunking** — PDFs split into overlapping chunks on upload (`_chunk_text`); chat retrieves top-6 by keyword overlap (`_rank_chunks`) instead of dumping the first 6KB; legacy files chunked on the fly
+- ✅ **Live inbox (SSE)** — `GET /api/messages/stream?token=` pushes conversation updates; `MessagesInbox` uses `EventSource` (pulsing Live indicator) instead of 8s polling; disconnect-aware, auth via token query param
+- ✅ Tested: backend 11/11 pytest, frontend 7/7 Playwright flows, zero console errors (`iteration_15.json`)
+
+## Notes / follow-ups (05 Aug)
+- `UPWORK_URL` in `Landing.jsx` is a placeholder (`https://www.upwork.com/`) — swap for Baazi's real profile link
+- A test Resend key (`re_UI_TEST_...`) was persisted by the test suite; overwrite it in Admin → System → Email Delivery with a real key to send live emails
+- Widget takeover (human replies shown to the visitor live) already works via `/chat/session/{sid}/pending` polling
+- Tech debt (from review, non-blocking): split `server.py` (~2345 lines) & `Dashboard.jsx` (~1136 lines) into routers/modules; consider a one-shot SSE ticket instead of JWT-in-URL
+
 ## Prioritised backlog
-- **P1** WebSocket / SSE push for the Messages inbox (currently polls every 8s)
-- **P2** Split `Dashboard.jsx` (~1073 lines) & `server.py` (~2199 lines) into per-section files/routers
-- **P2** Widget shows `human_agent` messages live (visitor-side takeover)
-- **P2** k-NN / RAG chunking over PDFs (currently dumps first 6KB per file)
+- **P2** Split `server.py` / `Dashboard.jsx` into routers/modules
+- **P2** SSE stream-ticket (avoid primary JWT in query string / logs)
 - **P2** Redesign Admin panel with the dashboard sidebar layout
 - **P3** UI presets (Minimal / Bold / Luxury) + "Copy widget mockup image"
-- **P3** Email intake for the unified inbox (SendGrid / Resend inbound)
+- **P3** Inbound email intake for the unified inbox
 
 ## Old (04 Aug) backlog — superseded items removed above
 
