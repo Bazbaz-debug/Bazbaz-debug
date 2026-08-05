@@ -7,7 +7,7 @@ import json
 import sys
 
 # Read base URL from frontend/.env
-BASE_URL = "https://code-sync-108.preview.emergentagent.com/api"
+BASE_URL = "https://env-recovery-build.preview.emergentagent.com/api"
 
 # Test credentials
 ADMIN_EMAIL = "admin@rozio-killer.com"
