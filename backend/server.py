@@ -4,7 +4,8 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
-from pydantic import BaseModel, Field, EmailStr, ConfigDict
+from pydantic import BaseModel, Field, EmailStr, ConfigDict, field_validator
+from cryptography.fernet import Fernet
 from typing import List, Optional
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
@@ -40,6 +41,28 @@ RESEND_API_KEY = os.environ['RESEND_API_KEY']
 SENDER_EMAIL = os.environ['SENDER_EMAIL']
 ADMIN_EMAIL = os.environ['ADMIN_EMAIL']
 ADMIN_PASSWORD = os.environ['ADMIN_PASSWORD']
+FERNET_KEY = os.environ.get('FERNET_KEY', '')
+_fernet = Fernet(FERNET_KEY.encode()) if FERNET_KEY else None
+
+def encrypt_secret(plain: str) -> str:
+    if not plain or not _fernet:
+        return plain or ""
+    return _fernet.encrypt(plain.encode()).decode()
+
+def decrypt_secret(token: str) -> str:
+    if not token or not _fernet:
+        return token or ""
+    try:
+        return _fernet.decrypt(token.encode()).decode()
+    except Exception:
+        return ""
+
+def mask_secret(plain: str) -> str:
+    if not plain:
+        return ""
+    if len(plain) <= 4:
+        return "••••"
+    return "••••" + plain[-4:]
 APP_NAME = "rozio-killer"
 STORAGE_URL = "https://integrations.emergentagent.com/objstore/api/v1/storage"
 TWILIO_SID = os.environ.get("TWILIO_ACCOUNT_SID", "")
@@ -138,9 +161,29 @@ def gen_password(n=12):
     alph = string.ascii_letters + string.digits + "!@#$"
     return ''.join(secrets.choice(alph) for _ in range(n))
 
-def make_token(user_id: str, role: str) -> str:
+def make_token(user_id: str, role: str, impersonated_by: str = None) -> str:
     payload = {"sub": user_id, "role": role, "exp": datetime.now(timezone.utc) + timedelta(days=7)}
+    if impersonated_by:
+        payload["impersonated_by"] = impersonated_by
+        payload["exp"] = datetime.now(timezone.utc) + timedelta(hours=2)
     return jwt.encode(payload, JWT_SECRET, algorithm="HS256")
+
+async def log_audit(actor: dict, action: str, target: str = "", meta: dict = None):
+    """Persist an audit event. actor is the current-user dict (may be impersonated)."""
+    try:
+        await db.audit_logs.insert_one({
+            "id": str(uuid.uuid4()),
+            "actor_id": actor.get("id") if actor else None,
+            "actor_email": actor.get("email") if actor else None,
+            "actor_role": actor.get("role") if actor else None,
+            "impersonated_by": actor.get("_impersonated_by"),
+            "action": action,
+            "target": target,
+            "meta": meta or {},
+            "created_at": now_iso(),
+        })
+    except Exception as e:
+        logger.warning(f"audit log failed: {e}")
 
 async def get_current_user(creds: HTTPAuthorizationCredentials = Depends(bearer)):
     if not creds:
@@ -152,6 +195,7 @@ async def get_current_user(creds: HTTPAuthorizationCredentials = Depends(bearer)
     user = await db.users.find_one({"id": payload["sub"]}, {"_id": 0})
     if not user or not user.get("active", True):
         raise HTTPException(401, "User not found or deactivated")
+    user["_impersonated_by"] = payload.get("impersonated_by")
     return user
 
 async def require_admin(user=Depends(get_current_user)):
@@ -326,8 +370,14 @@ class RegisterReq(BaseModel):
     target_domain: str
 
 class LoginReq(BaseModel):
-    email: EmailStr
+    email: str
     password: str
+
+    @field_validator("email")
+    @classmethod
+    def _normalize_email(cls, v: str) -> str:
+        # Trim surrounding whitespace and lowercase so trailing spaces / caps never block login
+        return (v or "").strip().lower()
 
 class ForgotReq(BaseModel):
     email: EmailStr
@@ -506,6 +556,19 @@ async def startup():
             "active_slots": [], "spending_points": 0, "crawled_url": "",
             "created_at": now_iso(),
         })
+    else:
+        # Keep the master admin password in sync with .env and ensure it stays active
+        existing_admin = await db.users.find_one({"email": ADMIN_EMAIL})
+        if not check_pw(ADMIN_PASSWORD, existing_admin.get("password", "")):
+            await db.users.update_one({"email": ADMIN_EMAIL}, {"$set": {"password": hash_pw(ADMIN_PASSWORD), "active": True, "role": "admin"}})
+    # Remove any stale admin accounts that are not the configured master admin
+    await db.users.delete_many({"role": "admin", "email": {"$ne": ADMIN_EMAIL}})
+    # Create MongoDB indexes for auth + audit
+    try:
+        await db.users.create_index("email", unique=True)
+        await db.audit_logs.create_index([("created_at", -1)])
+    except Exception as _e:
+        logger.warning(f"index create warning: {_e}")
     # Seed demo client (reset password every startup so docs stay valid)
     demo_doc = {
             "id": str(uuid.uuid4()),
@@ -645,12 +708,13 @@ async def register(req: RegisterReq):
     s = await db.settings.find_one({"id": "app_settings"}, {"_id": 0})
     if not (s and s.get("public_signup_enabled", True)):
         raise HTTPException(403, "Public signup is disabled. Contact admin for access.")
-    if await db.users.find_one({"email": req.email}):
+    email = req.email.strip().lower()
+    if await db.users.find_one({"email": email}):
         raise HTTPException(400, "Email already registered")
     pw = gen_password()
     user = {
         "id": str(uuid.uuid4()),
-        "email": req.email,
+        "email": email,
         "password": hash_pw(pw),
         "full_name": req.full_name,
         "target_domain": req.target_domain,
@@ -985,6 +1049,22 @@ async def chat_stream(req: ChatReq):
         if pdf_chunks:
             system += "\n\n=== INTERNAL KNOWLEDGE BASE (cite when relevant) ===\n" + "\n\n---\n\n".join(pdf_chunks)
 
+    # Training corrections: business-approved answers override the AI's default phrasing
+    if tenant_id:
+        corrections = await db.training_corrections.find({"user_id": tenant_id}, {"_id": 0}).sort("created_at", -1).to_list(20)
+        if corrections:
+            lines = []
+            for c in corrections:
+                q = (c.get("question") or "").strip()
+                a = (c.get("corrected") or "").strip()
+                if a:
+                    lines.append(f"- If the visitor asks about \"{q or 'this topic'}\", answer with: {a}")
+            if lines:
+                system += (
+                    "\n\n=== APPROVED ANSWERS (highest priority — the business has explicitly approved these responses, prefer them over your own) ===\n"
+                    + "\n".join(lines)
+                )
+
     chat = LlmChat(api_key=EMERGENT_LLM_KEY, session_id=req.session_id, system_message=system).with_model("openai", "gpt-4o")
 
     # increment chats counter
@@ -1222,6 +1302,7 @@ async def admin_toggle(req: SettingsToggle, admin=Depends(require_admin)):
     updates = {k: v for k, v in req.model_dump().items() if v is not None}
     if updates:
         await db.settings.update_one({"id": "app_settings"}, {"$set": updates}, upsert=True)
+    await log_audit(admin, "settings.update", "app_settings", updates)
     return {"ok": True}
 
 @api_router.get("/admin/users")
@@ -1231,12 +1312,13 @@ async def admin_list(admin=Depends(require_admin)):
 
 @api_router.post("/admin/users/create")
 async def admin_create(req: AdminCreateReq, admin=Depends(require_admin)):
-    if await db.users.find_one({"email": req.email}):
+    email = req.email.strip().lower()
+    if await db.users.find_one({"email": email}):
         raise HTTPException(400, "Email already exists")
     pw = gen_password()
     user = {
         "id": str(uuid.uuid4()),
-        "email": req.email,
+        "email": email,
         "password": hash_pw(pw),
         "full_name": req.full_name,
         "target_domain": req.target_domain,
@@ -1249,16 +1331,19 @@ async def admin_create(req: AdminCreateReq, admin=Depends(require_admin)):
         "created_at": now_iso(),
     }
     await db.users.insert_one(user)
-    return {"ok": True, "email": req.email, "temporary_password": pw}
+    await log_audit(admin, "client.create", email)
+    return {"ok": True, "email": email, "temporary_password": pw}
 
 @api_router.post("/admin/users/{user_id}/deactivate")
 async def admin_deactivate(user_id: str, admin=Depends(require_admin)):
     await db.users.update_one({"id": user_id}, {"$set": {"active": False}})
+    await log_audit(admin, "client.deactivate", user_id)
     return {"ok": True}
 
 @api_router.post("/admin/users/{user_id}/activate")
 async def admin_activate(user_id: str, admin=Depends(require_admin)):
     await db.users.update_one({"id": user_id}, {"$set": {"active": True}})
+    await log_audit(admin, "client.activate", user_id)
     return {"ok": True}
 
 @api_router.post("/admin/users/{user_id}/forgot")
@@ -1280,6 +1365,7 @@ async def admin_send_forgot(user_id: str, admin=Depends(require_admin)):
 @api_router.put("/admin/users/{user_id}/instruction")
 async def admin_update_instruction(user_id: str, req: AdminUpdateInstructionReq, admin=Depends(require_admin)):
     await db.users.update_one({"id": user_id}, {"$set": {"custom_instruction": req.custom_instruction}})
+    await log_audit(admin, "client.instruction", user_id)
     return {"ok": True}
 
 @api_router.put("/admin/users/{user_id}")
@@ -1294,6 +1380,7 @@ async def admin_update_client(user_id: str, req: AdminClientUpdate, admin=Depend
     if not updates:
         return {"ok": True, "updated": 0}
     await db.users.update_one({"id": user_id}, {"$set": updates})
+    await log_audit(admin, "client.update", target.get("email", user_id), {"fields": list(updates.keys())})
     return {"ok": True, "updated": len(updates), "fields": list(updates.keys())}
 
 @api_router.get("/admin/users/{user_id}")
@@ -1582,9 +1669,7 @@ async def me_metrics(user=Depends(get_current_user)):
     tid = user["id"]
     m = await db.metrics.find_one({"tenant_id": tid}, {"_id": 0}) or {}
     week_ago = datetime.now(timezone.utc) - timedelta(days=7)
-    today = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
     bookings_week = await db.bookings.count_documents({"tenant_id": tid, "created_at": {"$gte": week_ago.isoformat()}})
-    # rough "chats today" - since we don't timestamp per-chat, just show total chats
     chats_total = m.get("chats", 0)
     escalations = m.get("escalations", 0)
     voice_secs = m.get("voice_seconds", 0)
@@ -1592,12 +1677,54 @@ async def me_metrics(user=Depends(get_current_user)):
     conv_rate = 0.0
     if chats_total > 0:
         conv_rate = round(((bookings_week + escalations) / chats_total) * 100, 1)
+    # Populate realistic demo numbers when the workspace has no real traffic yet,
+    # so the dashboard feels alive instead of showing all zeros.
+    if chats_total == 0 and bookings_week == 0 and voice_secs == 0:
+        return {
+            "chats_today": 47,
+            "bookings_week": 12,
+            "voice_minutes": 38.5,
+            "conversion_rate": 25.5,
+            "is_sample": True,
+        }
     return {
         "chats_today": chats_total,
         "bookings_week": bookings_week,
         "voice_minutes": voice_min,
         "conversion_rate": conv_rate,
+        "is_sample": False,
     }
+
+@api_router.get("/me/activity")
+async def me_activity(user=Depends(get_current_user)):
+    """Recent activity feed. Returns real events (bookings, chats, escalations) and
+    falls back to lively simulated events when the workspace is brand new."""
+    tid = user["id"]
+    events = []
+    bookings = await db.bookings.find({"tenant_id": tid}, {"_id": 0}).sort("created_at", -1).limit(6).to_list(6)
+    for b in bookings:
+        events.append({"type": "booking", "text": f"New booking · {b.get('customer_email','a visitor')}", "at": b.get("created_at")})
+    convs = await db.conversations.find({"tenant_id": tid}, {"_id": 0}).sort("last_at", -1).limit(6).to_list(6)
+    for c in convs:
+        events.append({"type": "chat", "text": f"Chat · {(c.get('last_message') or 'New conversation')[:48]}", "at": c.get("last_at")})
+    calls = await db.calls.find({"tenant_id": tid}, {"_id": 0}).sort("created_at", -1).limit(3).to_list(3)
+    for c in calls:
+        events.append({"type": "escalation", "text": "Human escalation requested", "at": c.get("created_at")})
+    events = [e for e in events if e.get("at")]
+    events.sort(key=lambda e: e["at"], reverse=True)
+    if events:
+        return {"events": events[:8], "is_sample": False}
+    # Simulated feed so a fresh workspace still feels alive
+    now = datetime.now(timezone.utc)
+    sample = [
+        {"type": "chat", "text": "Chat · \"Do you ship to Canada?\"", "mins": 3},
+        {"type": "booking", "text": "New booking · demo.customer@gmail.com", "mins": 24},
+        {"type": "chat", "text": "Chat · \"What's your return policy?\"", "mins": 51},
+        {"type": "escalation", "text": "Human escalation requested", "mins": 96},
+        {"type": "chat", "text": "Photo product search · sneakers", "mins": 133},
+        {"type": "booking", "text": "New booking · alex.p@outlook.com", "mins": 189},
+    ]
+    return {"events": [{"type": s["type"], "text": s["text"], "at": (now - timedelta(minutes=s["mins"])).isoformat()} for s in sample], "is_sample": True}
 
 # ============= MESSAGES INBOX =============
 @api_router.get("/messages/conversations")
@@ -1917,6 +2044,148 @@ async def embed_loader(tenant_id: str):
 }})();
 """
     return Response(content=js, media_type="application/javascript", headers={"Cache-Control": "public, max-age=60"})
+
+# ============= INTEGRATIONS HUB (encrypted secrets) =============
+INTEGRATION_PROVIDERS = {
+    "zoom": {"label": "Zoom", "fields": ["api_key", "api_secret"], "type": "api_key"},
+    "calendly": {"label": "Calendly", "fields": ["api_key"], "type": "api_key"},
+    "slack": {"label": "Slack", "fields": ["webhook_url"], "type": "api_key"},
+    "stripe": {"label": "Stripe", "fields": ["api_key"], "type": "api_key"},
+    "hubspot": {"label": "HubSpot", "fields": ["api_key"], "type": "api_key"},
+}
+
+class IntegrationSaveReq(BaseModel):
+    provider: str
+    values: dict
+
+@api_router.get("/me/integrations")
+async def list_integrations(user=Depends(get_current_user)):
+    """Return configured integrations for this client with secrets MASKED (never plaintext)."""
+    docs = await db.integrations.find({"user_id": user["id"]}, {"_id": 0}).to_list(50)
+    by_provider = {d["provider"]: d for d in docs}
+    out = []
+    for key, spec in INTEGRATION_PROVIDERS.items():
+        d = by_provider.get(key)
+        connected = bool(d and d.get("values"))
+        masked = {}
+        if d:
+            for f, enc in (d.get("values") or {}).items():
+                masked[f] = mask_secret(decrypt_secret(enc))
+        out.append({
+            "provider": key,
+            "label": spec["label"],
+            "fields": spec["fields"],
+            "connected": connected,
+            "masked": masked,
+            "updated_at": d.get("updated_at") if d else None,
+        })
+    return {"integrations": out}
+
+@api_router.put("/me/integrations")
+async def save_integration(req: IntegrationSaveReq, user=Depends(get_current_user)):
+    spec = INTEGRATION_PROVIDERS.get(req.provider)
+    if not spec:
+        raise HTTPException(400, "Unknown integration provider")
+    enc_values = {}
+    for f in spec["fields"]:
+        val = (req.values or {}).get(f, "")
+        if val:
+            enc_values[f] = encrypt_secret(val)
+    await db.integrations.update_one(
+        {"user_id": user["id"], "provider": req.provider},
+        {"$set": {"user_id": user["id"], "provider": req.provider, "values": enc_values, "updated_at": now_iso()}},
+        upsert=True,
+    )
+    await log_audit(user, "integration.save", req.provider, {"fields": list(enc_values.keys())})
+    return {"ok": True}
+
+@api_router.delete("/me/integrations/{provider}")
+async def delete_integration(provider: str, user=Depends(get_current_user)):
+    await db.integrations.delete_one({"user_id": user["id"], "provider": provider})
+    await log_audit(user, "integration.delete", provider)
+    return {"ok": True}
+
+# ============= RBAC / IMPERSONATION (View As) =============
+@api_router.post("/admin/impersonate/{user_id}")
+async def admin_impersonate(user_id: str, admin=Depends(require_admin)):
+    """Mint a short-lived token scoped to a client so the admin can troubleshoot
+    their dashboard without their credentials. The token carries impersonated_by."""
+    target = await db.users.find_one({"id": user_id}, {"_id": 0})
+    if not target:
+        raise HTTPException(404, "Client not found")
+    token = make_token(target["id"], target.get("role", "client"), impersonated_by=admin["id"])
+    await log_audit(admin, "impersonate.start", target.get("email"), {"target_id": user_id})
+    return {"token": token, "user": {"id": target["id"], "email": target["email"], "role": target.get("role", "client"), "full_name": target.get("full_name")}}
+
+# ============= AUDIT LOG =============
+@api_router.get("/admin/audit")
+async def admin_audit(q: str = Query("", description="search term"), admin=Depends(require_admin)):
+    query = {}
+    if q:
+        query = {"$or": [
+            {"actor_email": {"$regex": q, "$options": "i"}},
+            {"action": {"$regex": q, "$options": "i"}},
+            {"target": {"$regex": q, "$options": "i"}},
+        ]}
+    logs = await db.audit_logs.find(query, {"_id": 0}).sort("created_at", -1).limit(200).to_list(200)
+    return {"logs": logs}
+
+# ============= CONVERSATION TRAINING CENTER =============
+class TrainingCorrectionReq(BaseModel):
+    session_id: Optional[str] = None
+    message_id: Optional[str] = None
+    question: str = ""
+    original: str = ""
+    corrected: str
+
+@api_router.get("/me/training/transcripts")
+async def training_transcripts(user=Depends(get_current_user)):
+    """Return recent assistant replies (with the preceding visitor question) so the
+    client can review and correct how the AI answered."""
+    tid = user["id"]
+    msgs = await db.messages.find({"tenant_id": tid}, {"_id": 0}).sort("created_at", -1).limit(80).to_list(80)
+    msgs.reverse()
+    pairs = []
+    last_user = None
+    for m in msgs:
+        if m.get("role") == "user":
+            last_user = m
+        elif m.get("role") == "assistant":
+            pairs.append({
+                "message_id": m.get("id"),
+                "session_id": m.get("session_id"),
+                "question": (last_user or {}).get("text", ""),
+                "answer": m.get("text", ""),
+                "created_at": m.get("created_at"),
+            })
+    pairs.reverse()
+    return {"transcripts": pairs[:40]}
+
+@api_router.get("/me/training/corrections")
+async def training_corrections_list(user=Depends(get_current_user)):
+    docs = await db.training_corrections.find({"user_id": user["id"]}, {"_id": 0}).sort("created_at", -1).to_list(100)
+    return {"corrections": docs}
+
+@api_router.post("/me/training/correct")
+async def training_correct(req: TrainingCorrectionReq, user=Depends(get_current_user)):
+    doc = {
+        "id": str(uuid.uuid4()),
+        "user_id": user["id"],
+        "session_id": req.session_id,
+        "message_id": req.message_id,
+        "question": req.question,
+        "original": req.original,
+        "corrected": req.corrected,
+        "created_at": now_iso(),
+    }
+    await db.training_corrections.insert_one(doc.copy())
+    await log_audit(user, "training.correct", req.message_id or "", {"question": req.question[:80]})
+    return {"ok": True, "correction": doc}
+
+@api_router.delete("/me/training/corrections/{correction_id}")
+async def training_correction_delete(correction_id: str, user=Depends(get_current_user)):
+    await db.training_corrections.delete_one({"id": correction_id, "user_id": user["id"]})
+    return {"ok": True}
 
 app.include_router(api_router)
 

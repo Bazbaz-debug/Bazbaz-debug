@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import api from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
-import { Shield, UserPlus, KeyRound, PowerOff, Power, Files, LogOut, Edit3, Save, Bot, Activity, MessagesSquare, CalendarCheck, Mic, PhoneCall, Users, Video, FileText, TrendingUp, CheckCircle2, XCircle, Settings, BarChart3, Upload, Sliders, Globe, Mail, Video as VideoIcon, Phone } from "lucide-react";
+import { Shield, UserPlus, KeyRound, PowerOff, Power, Files, LogOut, Edit3, Save, Bot, Activity, MessagesSquare, CalendarCheck, Mic, PhoneCall, Users, Video, FileText, TrendingUp, CheckCircle2, XCircle, Settings, BarChart3, Upload, Sliders, Globe, Mail, Video as VideoIcon, Phone, Eye, ScrollText, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -34,6 +34,12 @@ export default function Admin() {
   const [manageForm, setManageForm] = useState({});
   const [manageSaving, setManageSaving] = useState(false);
   const [manageFiles, setManageFiles] = useState([]);
+  const [audit, setAudit] = useState([]);
+  const [auditQ, setAuditQ] = useState("");
+
+  const loadAudit = useCallback(async (q = "") => {
+    try { const { data } = await api.get(`/admin/audit${q ? `?q=${encodeURIComponent(q)}` : ""}`); setAudit(data.logs || []); } catch {}
+  }, []);
 
   const load = useCallback(async () => {
     const [s, u, st, h, act] = await Promise.all([
@@ -52,6 +58,17 @@ export default function Admin() {
   }, []);
 
   useEffect(() => { load(); const t = setInterval(load, 10000); return () => clearInterval(t); }, [load]);
+  useEffect(() => { loadAudit(); }, [loadAudit]);
+
+  const viewAs = async (u) => {
+    try {
+      const { data } = await api.post(`/admin/impersonate/${u.id}`);
+      localStorage.setItem("rk_admin_token", localStorage.getItem("rk_token"));
+      localStorage.setItem("rk_token", data.token);
+      toast.success(`Entering ${u.email}'s workspace`);
+      window.location.href = "/dashboard";
+    } catch (e) { toast.error(e?.response?.data?.detail || "View As failed"); }
+  };
 
   const toggleSignup = async (v) => { setSignupEnabled(v); await api.put("/admin/settings", { public_signup_enabled: v }); toast.success(`Public signup ${v ? "enabled" : "disabled"}`); };
   const setUploadPolicy = async (v) => { setUploadPolicyState(v); await api.put("/admin/settings", { upload_policy: v }); toast.success(`Upload policy: ${v === "admin_only" ? "Admin only" : "Client self-serve"}`); };
@@ -149,10 +166,11 @@ export default function Admin() {
         </div>
 
         <Tabs defaultValue="overview" className="relative z-10">
-          <TabsList className="bg-[#2D3748] border border-white/5 rounded-md p-1 h-11 mb-6 grid grid-cols-4 max-w-xl">
+          <TabsList className="bg-[#2D3748] border border-white/5 rounded-md p-1 h-11 mb-6 grid grid-cols-5 max-w-2xl">
             <TabsTrigger data-testid="admin-tab-overview" value="overview" className="data-[state=active]:bg-[#1A202C] data-[state=active]:text-[#48BB78] data-[state=active]:shadow-none text-[#A0AEC0]"><BarChart3 size={14} className="mr-1.5"/>Overview</TabsTrigger>
             <TabsTrigger data-testid="admin-tab-clients" value="clients" className="data-[state=active]:bg-[#1A202C] data-[state=active]:text-[#48BB78] data-[state=active]:shadow-none text-[#A0AEC0]"><Users size={14} className="mr-1.5"/>Clients</TabsTrigger>
             <TabsTrigger data-testid="admin-tab-activity" value="activity" className="data-[state=active]:bg-[#1A202C] data-[state=active]:text-[#48BB78] data-[state=active]:shadow-none text-[#A0AEC0]"><Activity size={14} className="mr-1.5"/>Activity</TabsTrigger>
+            <TabsTrigger data-testid="admin-tab-audit" value="audit" className="data-[state=active]:bg-[#1A202C] data-[state=active]:text-[#48BB78] data-[state=active]:shadow-none text-[#A0AEC0]"><ScrollText size={14} className="mr-1.5"/>Audit</TabsTrigger>
             <TabsTrigger data-testid="admin-tab-settings" value="settings" className="data-[state=active]:bg-[#1A202C] data-[state=active]:text-[#48BB78] data-[state=active]:shadow-none text-[#A0AEC0]"><Settings size={14} className="mr-1.5"/>System</TabsTrigger>
           </TabsList>
 
@@ -254,6 +272,7 @@ export default function Admin() {
                           <span className={`text-xs font-bold px-2 py-1 rounded ${u.active ? "bg-[#48BB78]/15 text-[#48BB78]" : "bg-red-500/15 text-red-400"}`}>{u.active ? "ACTIVE" : "DEACTIVATED"}</span>
                         </TableCell>
                         <TableCell onClick={(e) => e.stopPropagation()} className="text-right space-x-1 whitespace-nowrap">
+                          <Button data-testid={`btn-viewas-${u.email}`} onClick={() => viewAs(u)} size="sm" variant="outline" className="border-[#ED8936]/50 text-[#ED8936] bg-transparent hover:bg-[#ED8936]/10 h-8 px-2" title="View As this client"><Eye size={12}/></Button>
                           <Button data-testid={`btn-manage-${u.email}`} onClick={() => openManage(u)} size="sm" className="bg-[#48BB78] hover:bg-[#38A169] text-[#1A202C] hover:text-white font-bold h-8 px-3" title="Manage client"><Sliders size={12} className="mr-1"/>Manage</Button>
                           <Button data-testid={`btn-metrics-${u.email}`} onClick={() => openMetrics(u)} size="sm" variant="outline" className="border-white/10 bg-transparent text-white hover:bg-white/5 h-8 px-2" title="Metrics"><TrendingUp size={12}/></Button>
                           <Button data-testid={`btn-forgot-${u.email}`} onClick={() => sendForgot(u.id)} size="sm" variant="outline" className="border-[#48BB78]/40 text-[#48BB78] bg-transparent hover:bg-[#48BB78]/10 h-8 px-2" title="Send Reset"><KeyRound size={12}/></Button>
@@ -302,6 +321,44 @@ export default function Admin() {
                     </li>
                   ))}
                 </ul>
+              </div>
+            </div>
+          </TabsContent>
+
+          {/* AUDIT */}
+          <TabsContent value="audit" className="space-y-6">
+            <div className="bg-[#2D3748] rounded-md border border-white/5 overflow-hidden">
+              <div className="p-4 border-b border-white/5 flex items-center justify-between gap-3">
+                <h3 className="font-display font-bold text-lg">Audit Log</h3>
+                <div className="flex items-center gap-2 flex-1 max-w-sm">
+                  <div className="relative flex-1">
+                    <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#A0AEC0]"/>
+                    <Input data-testid="audit-search-input" value={auditQ} onChange={e => setAuditQ(e.target.value)} onKeyDown={e => e.key === "Enter" && loadAudit(auditQ)} placeholder="Search actor, action, target…" className="bg-[#1A202C] border-white/10 text-white h-9 pl-9 text-sm"/>
+                  </div>
+                  <Button data-testid="audit-search-btn" onClick={() => loadAudit(auditQ)} size="sm" className="bg-[#48BB78] hover:bg-[#38A169] text-[#1A202C] hover:text-white font-bold h-9">Search</Button>
+                </div>
+              </div>
+              <div className="max-h-[560px] overflow-y-auto" data-testid="audit-list">
+                {audit.length === 0 ? (
+                  <p className="p-6 text-sm text-[#A0AEC0] text-center">No audit events found.</p>
+                ) : (
+                  <ul className="divide-y divide-white/5">
+                    {audit.map(a => (
+                      <li key={a.id} className="px-4 py-3 flex items-center gap-3" data-testid={`audit-row-${a.id}`}>
+                        <span className="text-[10px] font-black uppercase tracking-widest px-2 py-1 rounded bg-[#48BB78]/15 text-[#48BB78] flex-shrink-0">{a.action}</span>
+                        <div className="min-w-0 flex-1">
+                          <p className="text-white text-sm truncate">
+                            <span className="font-bold">{a.actor_email || "system"}</span>
+                            {a.impersonated_by && <span className="text-[#ED8936] text-xs ml-1">(impersonation)</span>}
+                            {a.target && <span className="text-[#A0AEC0]"> → {a.target}</span>}
+                          </p>
+                          {a.meta && Object.keys(a.meta).length > 0 && <p className="text-[11px] text-[#A0AEC0] truncate">{JSON.stringify(a.meta)}</p>}
+                        </div>
+                        <span className="text-[11px] text-white/40 flex-shrink-0">{a.created_at ? new Date(a.created_at).toLocaleString() : ""}</span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
               </div>
             </div>
           </TabsContent>
@@ -538,9 +595,16 @@ function HealthCard({ ok, label, detail, testId }) {
   return (
     <div data-testid={testId} className={`rounded-md p-3 border flex items-start gap-2 ${ok ? "bg-[#48BB78]/5 border-[#48BB78]/30" : "bg-red-500/5 border-red-500/30"}`}>
       {ok ? <CheckCircle2 className="text-[#48BB78] mt-0.5 flex-shrink-0" size={16}/> : <XCircle className="text-red-400 mt-0.5 flex-shrink-0" size={16}/>}
-      <div>
-        <p className="text-white text-sm font-bold">{label}</p>
-        <p className="text-xs text-[#A0AEC0]">{detail}</p>
+      <div className="min-w-0">
+        <div className="flex items-center gap-2 flex-wrap">
+          <p className="text-white text-sm font-bold">{label}</p>
+          {ok && (
+            <span data-testid={`${testId}-connected-badge`} className="inline-flex items-center gap-1 text-[10px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full bg-[#48BB78] text-[#0D1117] shadow-[0_0_12px_rgba(72,187,120,0.5)]">
+              <CheckCircle2 size={10} strokeWidth={3}/> Connected
+            </span>
+          )}
+        </div>
+        <p className="text-xs text-[#A0AEC0] mt-0.5">{detail}</p>
       </div>
     </div>
   );

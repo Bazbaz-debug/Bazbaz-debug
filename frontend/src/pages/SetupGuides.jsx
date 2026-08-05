@@ -10,7 +10,7 @@ export default function SetupGuides() {
   const nav = useNavigate();
   const backend = process.env.REACT_APP_BACKEND_URL;
   const clientId = user?.id || "YOUR_CLIENT_ID";
-  const snippet = `<script async src="${backend}/api/embed/${clientId}/loader.js" data-id="${clientId}"></script>`;
+  const snippet = `<script async src="${backend}/api/embed/${clientId}/loader.js" data-workspace-id="${clientId}"></script>`;
   const [copiedKey, setCopiedKey] = useState(null);
   const copy = (text, key) => {
     navigator.clipboard.writeText(text);
@@ -36,6 +36,7 @@ export default function SetupGuides() {
         <div className="bg-[#2D3748] border border-[#48BB78]/30 rounded-md p-5 mb-10">
           <p className="uppercase text-xs tracking-[0.3em] font-bold text-[#48BB78] mb-2">Your universal embed snippet</p>
           <div className="bg-[#1A202C] border border-white/10 rounded-md p-3 font-mono text-xs text-[#48BB78] break-all mb-3" data-testid="universal-snippet">{snippet}</div>
+          <p className="text-[11px] text-[#A0AEC0] mb-3" data-testid="workspace-id-note">Workspace ID: <span className="font-mono text-white">{clientId}</span> — this snippet loads only <b>your</b> concierge, knowledge base &amp; settings, fully isolated from other accounts.</p>
           <Button data-testid="copy-universal-snippet" onClick={() => copy(snippet, "universal")} className="bg-[#48BB78] hover:bg-[#38A169] text-[#1A202C] hover:text-white font-bold rounded-md">
             {copiedKey === "universal" ? <Check size={14} className="mr-1.5"/> : <Copy size={14} className="mr-1.5"/>}
             {copiedKey === "universal" ? "Copied" : "Copy snippet"}

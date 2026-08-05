@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
-import { Upload, Sparkles, CalendarDays, Palette, Bot, Link2, FileText, Copy, Check, Maximize2, CalendarClock, Video, Clock, Ban, Plus, Trash2, Image as ImageIcon, Settings2, Home, MessagesSquare, BookOpen, Send, User, Zap } from "lucide-react";
+import { Upload, Sparkles, CalendarDays, Palette, Bot, Link2, FileText, Copy, Check, Maximize2, CalendarClock, Video, Clock, Ban, Plus, Trash2, Image as ImageIcon, Settings2, Home, MessagesSquare, BookOpen, Send, User, Zap, Loader2, Activity, ShieldAlert, X, GraduationCap, KeyRound } from "lucide-react";
 import api, { API } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import Widget from "@/components/Widget";
@@ -47,6 +47,13 @@ export default function Dashboard() {
 
   if (!user) return null;
 
+  const impersonating = !!localStorage.getItem("rk_admin_token");
+  const exitViewAs = () => {
+    const adminTok = localStorage.getItem("rk_admin_token");
+    if (adminTok) { localStorage.setItem("rk_token", adminTok); localStorage.removeItem("rk_admin_token"); }
+    window.location.href = "/admin";
+  };
+
   const colors = {
     widget_bg: user.widget_bg || "#1A202C",
     bubble_color: user.bubble_color || "#48BB78",
@@ -58,6 +65,12 @@ export default function Dashboard() {
       <DashboardSidebar active={section} onSelect={handleSelect} user={user} onLogout={() => { logout(); nav("/"); }}/>
 
       <main className="flex-1 min-w-0 overflow-x-hidden">
+        {impersonating && (
+          <div data-testid="impersonation-banner" className="bg-[#ED8936] text-[#1A202C] px-6 md:px-10 py-2.5 flex items-center justify-between text-sm font-bold">
+            <span className="flex items-center gap-2"><ShieldAlert size={16}/> View As mode — you are viewing <span className="underline">{user.email}</span>'s workspace as admin</span>
+            <button data-testid="exit-view-as-btn" onClick={exitViewAs} className="inline-flex items-center gap-1.5 bg-[#1A202C] text-white px-3 py-1.5 rounded-md hover:bg-black/70 transition-colors"><X size={13}/> Exit View As</button>
+          </div>
+        )}
         {/* Top bar */}
         <header className="sticky top-0 z-30 bg-[#0B1016]/95 backdrop-blur border-b border-white/5 px-6 md:px-10 py-4 flex items-center justify-between">
           <div>
@@ -71,8 +84,8 @@ export default function Dashboard() {
           </div>
         </header>
 
-        {/* Section content */}
-        <div className="px-6 md:px-10 py-8 max-w-7xl">
+        {/* Section content — locked-width, centered workspace */}
+        <div className="px-6 md:px-10 py-8 max-w-[1200px] mx-auto w-full">
           {section === "dashboard" && <DashboardHome user={user} colors={colors} onOpenPreview={() => setPreviewOpen(true)}/>}
           {section === "messages" && <MessagesInbox tenantId={user.id}/>}
           {section === "knowledge" && <KnowledgeBase user={user} updateField={updateField} refresh={refresh}/>}
@@ -80,9 +93,9 @@ export default function Dashboard() {
         </div>
       </main>
 
-      {/* Live Preview Modal */}
+      {/* Live Preview Modal — full viewport, edge-to-edge */}
       <Dialog open={previewOpen} onOpenChange={setPreviewOpen}>
-        <DialogContent className="bg-[#0D1117] border-white/10 text-white max-w-[95vw] w-[95vw] h-[92vh] p-0 overflow-hidden flex flex-col">
+        <DialogContent className="bg-[#0D1117] border-0 text-white max-w-none w-screen h-screen sm:h-screen p-0 overflow-hidden flex flex-col rounded-none translate-x-0 translate-y-0 top-0 left-0 sm:rounded-none data-[state=open]:!zoom-in-100">
           <DialogHeader className="px-6 py-3 border-b border-white/10 flex-shrink-0">
             <DialogTitle className="font-display text-xl">Live Preview &mdash; test your widget on any site</DialogTitle>
           </DialogHeader>
@@ -140,6 +153,7 @@ function DashboardHome({ user, colors, onOpenPreview }) {
         </div>
 
         <div className="lg:col-span-2 space-y-6">
+          <RecentActivity/>
           {/* Embed snippet card */}
           <div className="bg-gradient-to-br from-[#48BB78]/10 via-[#141B24] to-[#141B24] border border-[#48BB78]/30 rounded-2xl p-6">
             <div className="flex items-center gap-2 mb-2">
@@ -177,6 +191,48 @@ function DashboardHome({ user, colors, onOpenPreview }) {
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+// ================= RECENT ACTIVITY FEED =================
+function RecentActivity() {
+  const [events, setEvents] = useState([]);
+  const [sample, setSample] = useState(false);
+  useEffect(() => {
+    const load = () => api.get("/me/activity").then(r => { setEvents(r.data.events || []); setSample(!!r.data.is_sample); }).catch(() => {});
+    load();
+    const t = setInterval(load, 15000);
+    return () => clearInterval(t);
+  }, []);
+  const iconFor = (type) => type === "booking" ? <CalendarDays size={13}/> : type === "escalation" ? <MessagesSquare size={13}/> : <Sparkles size={13}/>;
+  const rel = (at) => {
+    if (!at) return "";
+    const diff = Math.max(0, (Date.now() - new Date(at).getTime()) / 60000);
+    if (diff < 1) return "just now";
+    if (diff < 60) return `${Math.floor(diff)}m ago`;
+    if (diff < 1440) return `${Math.floor(diff / 60)}h ago`;
+    return `${Math.floor(diff / 1440)}d ago`;
+  };
+  return (
+    <div className="bg-[#141B24] border border-white/5 rounded-2xl p-6" data-testid="recent-activity">
+      <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center gap-2">
+          <Activity size={14} className="text-[#48BB78]"/>
+          <p className="text-[10px] uppercase tracking-[0.3em] font-bold text-[#48BB78]">Recent activity</p>
+        </div>
+        {sample && <span className="text-[9px] uppercase tracking-widest font-bold px-1.5 py-0.5 rounded bg-white/10 text-white/50" data-testid="activity-sample-badge">Sample</span>}
+      </div>
+      <ul className="space-y-2.5">
+        {events.map((e, i) => (
+          <li key={i} className="flex items-center gap-3" data-testid={`activity-item-${i}`}>
+            <span className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 bg-[#48BB78]/12 text-[#48BB78]">{iconFor(e.type)}</span>
+            <p className="text-[13px] text-white/85 flex-1 min-w-0 truncate">{e.text}</p>
+            <span className="text-[10px] text-white/35 flex-shrink-0">{rel(e.at)}</span>
+          </li>
+        ))}
+        {events.length === 0 && <li className="text-xs text-white/40">No activity yet.</li>}
+      </ul>
     </div>
   );
 }
@@ -328,9 +384,9 @@ function KnowledgeBase({ user, updateField, refresh }) {
     setBusy(true);
     try {
       const { data } = await api.post("/knowledge/crawl", { url: crawlUrl });
-      toast.success(`Synced ${data.products.length} products + delivery windows`);
+      toast.success(`Successfully crawled ${data.products.length} product${data.products.length === 1 ? "" : "s"}`);
       await refresh();
-    } catch { toast.error("Crawl failed"); }
+    } catch (e) { toast.error(e?.response?.data?.detail || "Error crawling site — check the URL and try again"); }
     finally { setBusy(false); }
   };
 
@@ -358,7 +414,7 @@ function KnowledgeBase({ user, updateField, refresh }) {
       <Card title="Website crawl / catalog sync" subtitle="Pull real products, prices & shipping info from your site">
         <div className="flex gap-2">
           <Input data-testid="crawl-url-input" value={crawlUrl} onChange={e => setCrawlUrl(e.target.value)} placeholder="https://yourshop.com/products" className="bg-[#0D1117] border-white/10 text-white h-11"/>
-          <Button data-testid="crawl-btn" onClick={doCrawl} disabled={busy} className="bg-[#48BB78] hover:bg-[#38A169] text-[#1A202C] hover:text-white font-bold h-11 rounded-md"><Link2 size={14} className="mr-1.5"/> Sync</Button>
+          <Button data-testid="crawl-btn" onClick={doCrawl} disabled={busy} className="bg-[#48BB78] hover:bg-[#38A169] text-[#1A202C] hover:text-white font-bold h-11 rounded-md min-w-[110px]">{busy ? <><Loader2 size={14} className="mr-1.5 animate-spin"/> Syncing…</> : <><Link2 size={14} className="mr-1.5"/> Sync</>}</Button>
         </div>
         {user.catalog?.length > 0 && (
           <div data-testid="catalog-preview" className="mt-4 grid grid-cols-2 md:grid-cols-4 gap-2">
@@ -399,11 +455,12 @@ function SettingsPanel({ user, updateField, refresh, colors }) {
   return (
     <div className="max-w-4xl">
       <Tabs defaultValue="branding" className="w-full">
-        <TabsList className="bg-[#141B24] border border-white/5 rounded-lg p-1 h-11 mb-6 w-full grid grid-cols-4">
+        <TabsList className="bg-[#141B24] border border-white/5 rounded-lg p-1 h-11 mb-6 w-full grid grid-cols-5">
           <TabsTrigger data-testid="settings-tab-branding" value="branding" className="data-[state=active]:bg-[#0D1117] data-[state=active]:text-[#48BB78] text-white/60"><Palette size={13} className="mr-1.5"/>Branding</TabsTrigger>
           <TabsTrigger data-testid="settings-tab-bot" value="bot" className="data-[state=active]:bg-[#0D1117] data-[state=active]:text-[#48BB78] text-white/60"><Bot size={13} className="mr-1.5"/>Bot Identity</TabsTrigger>
           <TabsTrigger data-testid="settings-tab-booking" value="booking" className="data-[state=active]:bg-[#0D1117] data-[state=active]:text-[#48BB78] text-white/60"><CalendarClock size={13} className="mr-1.5"/>Booking</TabsTrigger>
           <TabsTrigger data-testid="settings-tab-integrations" value="integrations" className="data-[state=active]:bg-[#0D1117] data-[state=active]:text-[#48BB78] text-white/60"><Zap size={13} className="mr-1.5"/>Integrations</TabsTrigger>
+          <TabsTrigger data-testid="settings-tab-training" value="training" className="data-[state=active]:bg-[#0D1117] data-[state=active]:text-[#48BB78] text-white/60"><GraduationCap size={13} className="mr-1.5"/>Training</TabsTrigger>
         </TabsList>
 
         <TabsContent value="branding" className="space-y-6">
@@ -427,6 +484,7 @@ function SettingsPanel({ user, updateField, refresh, colors }) {
         </TabsContent>
 
         <TabsContent value="integrations" className="space-y-6">
+          <IntegrationsHub/>
           <GoogleCalendarCard/>
           <Card title="Shopify order tracking" subtitle="Let visitors track their order right inside the chat. Requires an Admin API access token from your Shopify store.">
             <div className="grid md:grid-cols-2 gap-4">
@@ -456,6 +514,10 @@ function SettingsPanel({ user, updateField, refresh, colors }) {
             </div>
           </Card>
         </TabsContent>
+
+        <TabsContent value="training" className="space-y-6">
+          <TrainingCenter/>
+        </TabsContent>
       </Tabs>
     </div>
   );
@@ -470,6 +532,128 @@ function Card({ title, subtitle, children }) {
         {subtitle && <p className="text-xs text-[#A0AEC0] mt-0.5">{subtitle}</p>}
       </div>
       {children}
+    </div>
+  );
+}
+
+// ============ INTEGRATIONS HUB (encrypted secrets) ============
+function IntegrationsHub() {
+  const [items, setItems] = useState([]);
+  const [drafts, setDrafts] = useState({});
+  const [savingKey, setSavingKey] = useState(null);
+  const load = useCallback(() => api.get("/me/integrations").then(r => setItems(r.data.integrations || [])).catch(() => {}), []);
+  useEffect(() => { load(); }, [load]);
+  const setField = (provider, field, value) => setDrafts(d => ({ ...d, [provider]: { ...(d[provider] || {}), [field]: value } }));
+  const save = async (it) => {
+    setSavingKey(it.provider);
+    try {
+      await api.put("/me/integrations", { provider: it.provider, values: drafts[it.provider] || {} });
+      toast.success(`${it.label} connected securely`);
+      setDrafts(d => ({ ...d, [it.provider]: {} }));
+      await load();
+    } catch { toast.error("Could not save integration"); }
+    finally { setSavingKey(null); }
+  };
+  const remove = async (it) => { await api.delete(`/me/integrations/${it.provider}`); toast.success(`${it.label} disconnected`); await load(); };
+  const fieldLabel = (f) => ({ api_key: "API Key", api_secret: "API Secret", webhook_url: "Webhook URL" }[f] || f);
+  return (
+    <Card title="Integrations Hub" subtitle="Connect third-party tools. Keys are encrypted at rest and never shown again.">
+      <div className="space-y-3" data-testid="integrations-hub">
+        {items.map(it => (
+          <div key={it.provider} className="bg-[#0D1117] border border-white/5 rounded-xl p-4" data-testid={`integration-${it.provider}`}>
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-md bg-[#48BB78]/10 border border-[#48BB78]/25 text-[#48BB78] flex items-center justify-center"><KeyRound size={16}/></div>
+                <div>
+                  <p className="text-white font-bold text-sm">{it.label}</p>
+                  {it.connected
+                    ? <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-widest text-[#48BB78]" data-testid={`integration-status-${it.provider}`}><Check size={11}/> Connected {it.masked?.[it.fields[0]] ? `· ${it.masked[it.fields[0]]}` : ""}</span>
+                    : <span className="text-[10px] uppercase tracking-widest text-white/40 font-bold" data-testid={`integration-status-${it.provider}`}>Not connected</span>}
+                </div>
+              </div>
+              {it.connected && <button data-testid={`integration-remove-${it.provider}`} onClick={() => remove(it)} className="text-red-400 hover:text-red-300 text-xs font-bold inline-flex items-center gap-1"><Trash2 size={12}/> Remove</button>}
+            </div>
+            <div className="grid md:grid-cols-2 gap-2">
+              {it.fields.map(f => (
+                <Input key={f} data-testid={`integration-${it.provider}-${f}`} type="password" value={(drafts[it.provider] || {})[f] || ""} onChange={e => setField(it.provider, f, e.target.value)} placeholder={it.connected ? `Update ${fieldLabel(f)}` : fieldLabel(f)} className="bg-[#141B24] border-white/10 text-white h-10 font-mono text-xs"/>
+              ))}
+            </div>
+            <Button data-testid={`integration-save-${it.provider}`} onClick={() => save(it)} disabled={savingKey === it.provider} size="sm" className="mt-2 bg-[#48BB78] hover:bg-[#38A169] text-[#1A202C] hover:text-white font-bold rounded-md">
+              {savingKey === it.provider ? <Loader2 size={13} className="mr-1.5 animate-spin"/> : <KeyRound size={13} className="mr-1.5"/>}{it.connected ? "Update key" : "Connect"}
+            </Button>
+          </div>
+        ))}
+      </div>
+    </Card>
+  );
+}
+
+// ============ CONVERSATION TRAINING CENTER ============
+function TrainingCenter() {
+  const [transcripts, setTranscripts] = useState([]);
+  const [corrections, setCorrections] = useState([]);
+  const [edits, setEdits] = useState({});
+  const [savingId, setSavingId] = useState(null);
+  const load = useCallback(async () => {
+    try {
+      const [t, c] = await Promise.all([api.get("/me/training/transcripts"), api.get("/me/training/corrections")]);
+      setTranscripts(t.data.transcripts || []);
+      setCorrections(c.data.corrections || []);
+    } catch {}
+  }, []);
+  useEffect(() => { load(); }, [load]);
+  const saveCorrection = async (t) => {
+    const corrected = (edits[t.message_id] ?? "").trim();
+    if (!corrected) { toast.error("Type the corrected answer first"); return; }
+    setSavingId(t.message_id);
+    try {
+      await api.post("/me/training/correct", { message_id: t.message_id, session_id: t.session_id, question: t.question, original: t.answer, corrected });
+      toast.success("Correction saved — the AI will use this answer going forward");
+      setEdits(e => ({ ...e, [t.message_id]: "" }));
+      await load();
+    } catch { toast.error("Could not save correction"); }
+    finally { setSavingId(null); }
+  };
+  const removeCorrection = async (id) => { await api.delete(`/me/training/corrections/${id}`); toast.success("Correction removed"); await load(); };
+  return (
+    <div className="space-y-6" data-testid="training-center">
+      <Card title="Approved answers" subtitle="Corrections you've saved. The AI prefers these over its own phrasing.">
+        {corrections.length === 0 ? (
+          <p className="text-sm text-[#A0AEC0]">No approved answers yet. Correct a transcript below to train your bot.</p>
+        ) : (
+          <ul className="space-y-2" data-testid="corrections-list">
+            {corrections.map(c => (
+              <li key={c.id} className="bg-[#0D1117] border border-[#48BB78]/25 rounded-lg p-3">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    {c.question && <p className="text-[11px] text-white/40 mb-0.5 truncate">Q: {c.question}</p>}
+                    <p className="text-sm text-white">{c.corrected}</p>
+                  </div>
+                  <button data-testid={`correction-remove-${c.id}`} onClick={() => removeCorrection(c.id)} className="text-red-400 hover:text-red-300 flex-shrink-0"><Trash2 size={13}/></button>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </Card>
+      <Card title="Review transcripts" subtitle="Read how your AI answered real visitors and correct any reply.">
+        {transcripts.length === 0 ? (
+          <p className="text-sm text-[#A0AEC0]">No conversations to review yet. Once visitors chat with your widget, their exchanges appear here.</p>
+        ) : (
+          <ul className="space-y-4" data-testid="transcripts-list">
+            {transcripts.slice().reverse().map(t => (
+              <li key={t.message_id} className="bg-[#0D1117] border border-white/5 rounded-lg p-3" data-testid={`transcript-${t.message_id}`}>
+                {t.question && <p className="text-[12px] text-white/50 mb-1"><span className="text-white/30 font-bold uppercase tracking-widest text-[10px] mr-1">Visitor</span>{t.question}</p>}
+                <p className="text-[13px] text-white mb-2"><span className="text-[#48BB78] font-bold uppercase tracking-widest text-[10px] mr-1">AI</span>{t.answer}</p>
+                <Textarea data-testid={`transcript-edit-${t.message_id}`} value={edits[t.message_id] ?? ""} onChange={e => setEdits(x => ({ ...x, [t.message_id]: e.target.value }))} placeholder="Better answer the AI should give next time…" className="bg-[#141B24] border-white/10 text-white min-h-[60px] text-sm"/>
+                <Button data-testid={`transcript-save-${t.message_id}`} onClick={() => saveCorrection(t)} disabled={savingId === t.message_id} size="sm" className="mt-2 bg-[#48BB78] hover:bg-[#38A169] text-[#1A202C] hover:text-white font-bold rounded-md">
+                  {savingId === t.message_id ? <Loader2 size={13} className="mr-1.5 animate-spin"/> : <Check size={13} className="mr-1.5"/>}Save correction
+                </Button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </Card>
     </div>
   );
 }

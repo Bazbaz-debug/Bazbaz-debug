@@ -38,7 +38,7 @@ export default function Login() {
           <h1 className="font-display font-black text-5xl leading-none tracking-tighter mb-4">Log in.<br/>Ship widgets.</h1>
           <p className="text-[#A0AEC0]">The interactive sandbox is waiting on the other side.</p>
         </div>
-        <p className="text-xs text-[#A0AEC0] relative z-10">Admin: admin@rozio-killer.com / Admin@12345</p>
+        <p className="text-xs text-[#A0AEC0] relative z-10">Your embeddable AI concierge, isolated per workspace.</p>
       </div>
       <div className="flex items-center justify-center p-6 md:p-12 bg-[#1A202C]">
         <form onSubmit={submit} className="w-full max-w-sm">
