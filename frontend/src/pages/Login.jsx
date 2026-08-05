@@ -6,6 +6,7 @@ import { useAuth } from "@/context/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { KairoMark } from "@/components/KairoLogo";
 
 export default function Login() {
   const { login } = useAuth();
@@ -30,8 +31,8 @@ export default function Login() {
     <div className="min-h-screen grid lg:grid-cols-2">
       <div className="hidden lg:flex flex-col justify-between p-12 bg-[#0D1117] relative dot-grid noise">
         <Link to="/" className="flex items-center gap-2 relative z-10">
-          <div className="w-9 h-9 rounded-md bg-[#48BB78] flex items-center justify-center text-[#1A202C]"><Bot size={20} strokeWidth={2.5}/></div>
-          <span className="font-display font-black text-xl">Rozio-Killer</span>
+          <div className="w-9 h-9 rounded-md bg-[#48BB78] flex items-center justify-center text-[#1A202C]"><KairoMark size={22}/></div>
+          <span className="font-display font-black text-xl">Kairo</span>
         </Link>
         <div className="relative z-10 max-w-md">
           <p className="uppercase text-xs tracking-[0.3em] text-[#48BB78] font-bold mb-3">Neon-Green Console</p>

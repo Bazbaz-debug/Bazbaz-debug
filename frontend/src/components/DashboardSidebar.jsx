@@ -1,5 +1,6 @@
 import { LayoutDashboard, MessagesSquare, BookOpen, Settings as SettingsIcon, Shield, LogOut, Bot, Sparkles, Code2 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
+import { KairoMark } from "./KairoLogo";
 
 export const NAV_ITEMS = [
   { key: "dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -15,9 +16,9 @@ export default function DashboardSidebar({ active, onSelect, user, onLogout }) {
       {/* Brand */}
       <div className="px-5 pt-5 pb-4 border-b border-white/5">
         <div className="flex items-center gap-2.5">
-          <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-[#48BB78] to-[#38A169] flex items-center justify-center text-[#0D1117] shadow-lg shadow-[#48BB78]/20"><Bot size={20} strokeWidth={2.5}/></div>
+          <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-[#48BB78] to-[#38A169] flex items-center justify-center text-[#0D1117] shadow-lg shadow-[#48BB78]/20"><KairoMark size={22}/></div>
           <div>
-            <p className="font-display font-black text-[15px] leading-none">Rozio-Killer</p>
+            <p className="font-display font-black text-[15px] leading-none">Kairo</p>
             <p className="text-[10px] uppercase tracking-[0.2em] text-[#48BB78] font-bold mt-1">AI Concierge</p>
           </div>
         </div>

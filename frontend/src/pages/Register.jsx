@@ -62,7 +62,7 @@ export default function Register() {
       <form onSubmit={submit} className="w-full max-w-md bg-[#2D3748] p-8 rounded-lg border border-white/5">
         <Link to="/" className="flex items-center gap-2 mb-8">
           <div className="w-8 h-8 rounded-md bg-[#48BB78] flex items-center justify-center text-[#1A202C]"><Bot size={18} strokeWidth={2.5}/></div>
-          <span className="font-display font-black">Rozio-Killer</span>
+          <span className="font-display font-black">Kairo</span>
         </Link>
         <h1 className="font-display font-black text-3xl mb-6 tracking-tight">Claim your invite</h1>
         <div className="space-y-4">

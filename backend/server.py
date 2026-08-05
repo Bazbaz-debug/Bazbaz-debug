@@ -63,7 +63,7 @@ def mask_secret(plain: str) -> str:
     if len(plain) <= 4:
         return "••••"
     return "••••" + plain[-4:]
-APP_NAME = "rozio-killer"
+APP_NAME = "kairo"
 STORAGE_URL = "https://integrations.emergentagent.com/objstore/api/v1/storage"
 TWILIO_SID = os.environ.get("TWILIO_ACCOUNT_SID", "")
 TWILIO_TOKEN = os.environ.get("TWILIO_AUTH_TOKEN", "")
@@ -112,6 +112,14 @@ _avatar_cache = {}  # gender -> jpeg bytes
 
 resend.api_key = RESEND_API_KEY
 
+# Platform email overrides configurable from the Admin UI (stored encrypted in db.settings)
+_platform_email = {"resend_api_key": "", "sender_email": ""}
+
+async def load_platform_email():
+    s = await db.settings.find_one({"id": "app_settings"}, {"_id": 0}) or {}
+    _platform_email["resend_api_key"] = decrypt_secret(s.get("resend_api_key_enc", "")) if s.get("resend_api_key_enc") else ""
+    _platform_email["sender_email"] = s.get("sender_email", "") or ""
+
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
@@ -147,6 +155,46 @@ def put_object(path: str, data: bytes, content_type: str):
 # ============= HELPERS =============
 def now_iso():
     return datetime.now(timezone.utc).isoformat()
+
+import re as _re_mod
+_STOPWORDS = set("the a an and or of to for in on at is are was were be been do does how what when where which who your you our we i it this that with from as by".split())
+
+def _chunk_text(text: str, size: int = 700, overlap: int = 120) -> list:
+    """Split text into overlapping character windows on sentence-ish boundaries."""
+    text = (text or "").strip()
+    if not text:
+        return []
+    chunks = []
+    i = 0
+    n = len(text)
+    while i < n:
+        end = min(i + size, n)
+        chunk = text[i:end].strip()
+        if chunk:
+            chunks.append(chunk)
+        if end >= n:
+            break
+        i = end - overlap
+    return chunks[:200]
+
+def _keywords(s: str) -> set:
+    return {w for w in _re_mod.findall(r"[a-z0-9]+", (s or "").lower()) if len(w) > 2 and w not in _STOPWORDS}
+
+def _rank_chunks(query: str, chunks: list, top: int = 6) -> list:
+    """Lightweight keyword-overlap retrieval — returns the top matching chunks."""
+    qk = _keywords(query)
+    if not qk:
+        return chunks[:top]
+    scored = []
+    for ch in chunks:
+        ck = _keywords(ch)
+        if not ck:
+            continue
+        overlap = len(qk & ck)
+        if overlap:
+            scored.append((overlap / (len(qk) ** 0.5), ch))
+    scored.sort(key=lambda x: x[0], reverse=True)
+    return [c for _, c in scored[:top]] or chunks[:top]
 
 def hash_pw(pw: str) -> str:
     return bcrypt.hashpw(pw.encode(), bcrypt.gensalt()).decode()
@@ -204,8 +252,11 @@ async def require_admin(user=Depends(get_current_user)):
     return user
 
 def send_email_sync(to: str, subject: str, html: str, from_override: str = None):
-    """Send email. Prefer Amazon SES if configured, fallback to Resend."""
-    sender = from_override or SES_FROM_EMAIL or SENDER_EMAIL
+    """Send email. Prefer Amazon SES if configured, fallback to Resend.
+    Admin-configured Resend key/sender (from the Platform Keys UI) take priority."""
+    admin_resend = _platform_email.get("resend_api_key") or ""
+    admin_sender = _platform_email.get("sender_email") or ""
+    sender = from_override or admin_sender or SES_FROM_EMAIL or SENDER_EMAIL
     # Try SES first
     if AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY and SES_FROM_EMAIL:
         try:
@@ -218,8 +269,13 @@ def send_email_sync(to: str, subject: str, html: str, from_override: str = None)
             return True
         except Exception as e:
             logger.warning(f"SES send failed, falling back to Resend: {e}")
-    # Fallback: Resend
+    # Fallback: Resend (prefer admin-configured key)
+    key = admin_resend or RESEND_API_KEY
+    if not key or key.startswith("re_placeholder"):
+        logger.warning("Resend key not configured (placeholder) — email not sent")
+        return False
     try:
+        resend.api_key = key
         resend.Emails.send({"from": sender, "to": [to], "subject": subject, "html": html})
         return True
     except Exception as e:
@@ -591,6 +647,7 @@ async def startup():
         await db.users.update_one({"email": "demo@client.com"}, {"$set": {"password": hash_pw("Demo@12345"), "active": True}})
     if not await db.settings.find_one({"id": "app_settings"}):
         await db.settings.insert_one({"id": "app_settings", "public_signup_enabled": True, "upload_policy": "client_self_serve"})
+    await load_platform_email()
     logger.info("Startup complete")
 
 @app.on_event("shutdown")
@@ -600,7 +657,7 @@ async def shutdown():
 # ============= PUBLIC =============
 @api_router.get("/")
 async def root():
-    return {"app": "Rozio-Killer SaaS", "status": "ok"}
+    return {"app": "Kairo SaaS", "status": "ok"}
 
 @api_router.get("/settings/public")
 async def get_public_settings():
@@ -650,7 +707,7 @@ async def preview_proxy(url: str = Query(..., description="Full https URL to fet
         raise HTTPException(400, "Invalid URL")
     try:
         async with httpx.AsyncClient(timeout=15.0, follow_redirects=True, headers={
-            "User-Agent": "Mozilla/5.0 (compatible; RozioKillerPreview/1.0)",
+            "User-Agent": "Mozilla/5.0 (compatible; KairoPreview/1.0)",
             "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
         }) as client:
             resp = await client.get(url)
@@ -677,7 +734,7 @@ async def preview_proxy(url: str = Query(..., description="Full https URL to fet
             "background:linear-gradient(90deg,#48BB78,#38A169);color:#0D1117;"
             "padding:6px 14px;font:600 12px/1.4 system-ui,sans-serif;"
             "text-align:center;box-shadow:0 2px 12px rgba(0,0,0,.25)'>"
-            "&#10024; Rozio-Killer Live Sandbox &middot; proxied preview of "
+            "&#10024; Kairo Live Sandbox &middot; proxied preview of "
             f"<b>{parsed.netloc}</b> &middot; the widget appears below-right</div>"
             "<div style='height:32px'></div>"
         )
@@ -729,13 +786,13 @@ async def register(req: RegisterReq):
     await db.users.insert_one(user)
     html = f"""
     <div style='font-family:Arial;padding:24px;background:#1A202C;color:#fff'>
-    <h2 style='color:#48BB78'>Welcome to Rozio-Killer, {req.full_name}!</h2>
+    <h2 style='color:#48BB78'>Welcome to Kairo, {req.full_name}!</h2>
     <p>Your account is verified. Login with these credentials:</p>
     <p><b>Email:</b> {req.email}<br><b>Temporary Password:</b> <code style='background:#2D3748;padding:4px 8px'>{pw}</code></p>
     <p>Domain onboarded: {req.target_domain}</p>
     </div>
     """
-    await send_email(req.email, "Welcome to Rozio-Killer - Account Verified", html)
+    await send_email(req.email, "Welcome to Kairo - Account Verified", html)
     return {"ok": True, "message": "Verification email sent with login credentials.", "email_preview_password": pw}
 
 @api_router.post("/auth/login")
@@ -761,7 +818,7 @@ async def forgot(req: ForgotReq):
         <p>Please login and change it immediately.</p>
         </div>
         """
-        await send_email(req.email, "Rozio-Killer - Password Reset", html)
+        await send_email(req.email, "Kairo - Password Reset", html)
     return {"ok": True, "message": "If the email exists, a reset was sent."}
 
 # ============= CLIENT DASHBOARD =============
@@ -852,11 +909,13 @@ async def upload_pdf(file: UploadFile = File(...), user=Depends(get_current_user
     text = ""
     try:
         reader = PdfReader(BytesIO(data))
-        for page in reader.pages[:30]:  # first 30 pages
+        for page in reader.pages[:50]:  # first 50 pages
             text += (page.extract_text() or "") + "\n"
-        text = text[:30000]  # cap for prompt safety
+        text = text[:60000]
     except Exception as e:
         logger.warning(f"PDF extract failed: {e}")
+    # Split into overlapping chunks for retrieval (RAG) instead of a naive head dump
+    chunks = _chunk_text(text, size=700, overlap=120)
     rec = {
         "id": str(uuid.uuid4()),
         "user_id": user["id"],
@@ -864,12 +923,13 @@ async def upload_pdf(file: UploadFile = File(...), user=Depends(get_current_user
         "original_filename": file.filename,
         "size": result["size"],
         "content": text,
+        "chunks": chunks,
         "is_deleted": False,
         "created_at": now_iso(),
     }
     await db.files.insert_one(rec.copy())
     # Response without heavy content
-    return {k: v for k, v in rec.items() if k != "content"}
+    return {k: v for k, v in rec.items() if k not in ("content", "chunks")}
 
 @api_router.get("/knowledge/files")
 async def list_files(user=Depends(get_current_user)):
@@ -883,7 +943,7 @@ async def crawl_url(payload: dict, user=Depends(get_current_user)):
     if not url.startswith("http"):
         raise HTTPException(400, "Provide a valid URL starting with http/https")
     try:
-        r = await asyncio.to_thread(lambda: requests.get(url, timeout=15, headers={"User-Agent": "Mozilla/5.0 (Rozio-Killer Crawler)"}))
+        r = await asyncio.to_thread(lambda: requests.get(url, timeout=15, headers={"User-Agent": "Mozilla/5.0 (Kairo Crawler)"}))
         r.raise_for_status()
     except Exception as e:
         raise HTTPException(400, f"Fetch failed: {e}")
@@ -1039,31 +1099,47 @@ async def chat_stream(req: ChatReq):
         }
         system += f"\n\nBOT PERSONA: You are called {_bot_name or 'the AI concierge'}. Tone: {tone_map.get(_tone, tone_map['friendly'])}"
 
-    # RAG: inject PDF knowledge context
+    # RAG: inject PDF knowledge context (keyword-retrieved chunks, not a naive head dump)
     if tenant_id:
-        pdf_files = await db.files.find({"user_id": tenant_id, "is_deleted": False}, {"_id": 0, "content": 1, "original_filename": 1}).to_list(5)
-        pdf_chunks = []
+        pdf_files = await db.files.find({"user_id": tenant_id, "is_deleted": False}, {"_id": 0, "content": 1, "chunks": 1, "original_filename": 1}).to_list(20)
+        all_chunks = []  # (filename, chunk_text)
         for f in pdf_files:
-            if f.get("content"):
-                pdf_chunks.append(f"[Source: {f.get('original_filename', 'pdf')}]\n{f['content'][:6000]}")
-        if pdf_chunks:
-            system += "\n\n=== INTERNAL KNOWLEDGE BASE (cite when relevant) ===\n" + "\n\n---\n\n".join(pdf_chunks)
+            fname = f.get("original_filename", "pdf")
+            fchunks = f.get("chunks") or []
+            if fchunks:
+                for ch in fchunks:
+                    all_chunks.append((fname, ch))
+            elif f.get("content"):
+                # legacy files without stored chunks — chunk on the fly
+                for ch in _chunk_text(f["content"], size=700, overlap=120):
+                    all_chunks.append((fname, ch))
+        if all_chunks:
+            ranked = _rank_chunks(req.message, [c for _, c in all_chunks], top=6)
+            # keep source label mapping
+            label_map = {c: fn for fn, c in all_chunks}
+            pdf_blocks = [f"[Source: {label_map.get(c, 'pdf')}]\n{c}" for c in ranked]
+            system += "\n\n=== INTERNAL KNOWLEDGE BASE (most relevant passages — cite when relevant) ===\n" + "\n\n---\n\n".join(pdf_blocks)
 
     # Training corrections: business-approved answers override the AI's default phrasing
     if tenant_id:
         corrections = await db.training_corrections.find({"user_id": tenant_id}, {"_id": 0}).sort("created_at", -1).to_list(20)
         if corrections:
             lines = []
+            injected_ids = []
             for c in corrections:
                 q = (c.get("question") or "").strip()
                 a = (c.get("corrected") or "").strip()
                 if a:
                     lines.append(f"- If the visitor asks about \"{q or 'this topic'}\", answer with: {a}")
+                    injected_ids.append(c.get("id"))
             if lines:
                 system += (
                     "\n\n=== APPROVED ANSWERS (highest priority — the business has explicitly approved these responses, prefer them over your own) ===\n"
                     + "\n".join(lines)
                 )
+                # Analytics: count how often each approved answer is surfaced to the AI
+                if injected_ids:
+                    await db.training_corrections.update_many({"id": {"$in": injected_ids}}, {"$inc": {"used_count": 1}, "$set": {"last_used_at": now_iso()}})
 
     chat = LlmChat(api_key=EMERGENT_LLM_KEY, session_id=req.session_id, system_message=system).with_model("openai", "gpt-4o")
 
@@ -1139,7 +1215,7 @@ async def escalate(req: EscalateReq):
     <h2 style='color:#48BB78'>Live Human Escalation - Transcript</h2>
     <p>A customer requested to speak with a live agent on <b>{tenant.get('target_domain', 'your site')}</b>.</p>
     <div style='background:#2D3748;padding:16px;border-radius:6px'>{lines}</div>
-    <p style='margin-top:16px'>Automated phone fallback trigger: <b>+1-555-ROZIO-AI</b></p>
+    <p style='margin-top:16px'>Automated phone fallback trigger: <b>+1-555-KAIRO-AI</b></p>
     </div>
     """
     await send_email(tenant["email"], "Live Human Escalation - Chat Transcript", html)
@@ -1168,7 +1244,7 @@ async def escalate(req: EscalateReq):
         try:
             tw = _twilio_client()
             c = tw.calls.create(to=business_phone, from_=TWILIO_FROM,
-                twiml=f"<Response><Say voice='Polly.Joanna'>Live human escalation from Rozio Killer. A customer on {tenant.get('target_domain', 'your site')} is waiting.</Say></Response>")
+                twiml=f"<Response><Say voice='Polly.Joanna'>Live human escalation from Kairo. A customer on {tenant.get('target_domain', 'your site')} is waiting.</Say></Response>")
             call_sid = c.sid
             call_status = "live_call_placed"
             call_provider = "twilio"
@@ -1177,10 +1253,10 @@ async def escalate(req: EscalateReq):
             call_status = f"twilio_failed: {str(e)[:60]}"
     # SMS lead alert if Telnyx configured
     if TELNYX_API_KEY and TELNYX_PHONE_NUMBER and business_phone:
-        await send_sms(business_phone, f"Rozio-Killer: High-intent lead escalation from {tenant.get('target_domain','your site')}. Check email for transcript.")
+        await send_sms(business_phone, f"Kairo: High-intent lead escalation from {tenant.get('target_domain','your site')}. Check email for transcript.")
     await db.calls.insert_one({"id": str(uuid.uuid4()), "tenant_id": req.tenant_id, "target": business_phone, "status": call_status, "sid": call_sid, "provider": call_provider, "created_at": now_iso()})
     await db.metrics.update_one({"tenant_id": req.tenant_id}, {"$inc": {"escalations": 1}}, upsert=True)
-    return {"ok": True, "status": "Routing to Live Line...", "phone": business_phone or "+1-555-ROZIO-AI", "call_status": call_status, "call_sid": call_sid, "provider": call_provider}
+    return {"ok": True, "status": "Routing to Live Line...", "phone": business_phone or "+1-555-KAIRO-AI", "call_status": call_status, "call_sid": call_sid, "provider": call_provider}
 
 @api_router.post("/booking/confirm")
 async def booking_confirm(req: BookingReq):
@@ -1556,7 +1632,7 @@ async def admin_activity(admin=Depends(require_admin)):
 async def admin_health(admin=Depends(require_admin)):
     return {
         "emergent_llm": bool(EMERGENT_LLM_KEY),
-        "resend": bool(RESEND_API_KEY),
+        "resend": bool((_platform_email.get("resend_api_key") or (RESEND_API_KEY if not RESEND_API_KEY.startswith("re_placeholder") else ""))),
         "ses": bool(AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY and SES_FROM_EMAIL),
         "twilio_configured": bool(TWILIO_SID and (TWILIO_TOKEN or (TWILIO_API_KEY_SID and TWILIO_API_KEY_SECRET))),
         "twilio_can_call": bool(TWILIO_SID and (TWILIO_TOKEN or (TWILIO_API_KEY_SID and TWILIO_API_KEY_SECRET)) and TWILIO_FROM),
@@ -1791,6 +1867,34 @@ async def visitor_poll_pending(session_id: str, tenant_id: str = Query(...), sin
     msgs = await db.messages.find(q, {"_id": 0}).sort("created_at", 1).limit(50).to_list(50)
     return {"messages": msgs, "server_time": now_iso()}
 
+@api_router.get("/messages/stream")
+async def messages_stream(token: str = Query(...)):
+    """Server-Sent Events stream that pushes conversation updates to the owner's
+    inbox in near real-time (no manual refresh). Auth via token query param
+    because EventSource cannot set Authorization headers."""
+    try:
+        payload = jwt.decode(token, JWT_SECRET, algorithms=["HS256"])
+        tenant_id = payload["sub"]
+    except Exception:
+        raise HTTPException(401, "Invalid token")
+
+    async def gen():
+        last = now_iso()
+        yield f"data: {json.dumps({'type': 'ping'})}\n\n"
+        # Cap the stream lifetime; EventSource auto-reconnects.
+        for _ in range(300):  # ~10 min at 2s
+            convs = await db.conversations.find(
+                {"tenant_id": tenant_id, "last_at": {"$gt": last}}, {"_id": 0}
+            ).sort("last_at", 1).to_list(50)
+            if convs:
+                last = convs[-1].get("last_at") or last
+                yield f"data: {json.dumps({'type': 'update', 'conversations': convs})}\n\n"
+            else:
+                yield f"data: {json.dumps({'type': 'ping'})}\n\n"
+            await asyncio.sleep(2)
+    return StreamingResponse(gen(), media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
 # ============= ORDER TRACKING (Shopify) =============
 class OrderTrackRequest(BaseModel):
     tenant_id: str
@@ -1976,7 +2080,7 @@ async def voice_tts(req: TTSReq):
 async def embed_loader(tenant_id: str):
     tenant = await db.users.find_one({"id": tenant_id, "active": True}, {"_id": 0})
     if not tenant:
-        return Response(content="console.warn('[Rozio-Killer] widget disabled - account inactive or missing');", media_type="application/javascript")
+        return Response(content="console.warn('[Kairo] widget disabled - account inactive or missing');", media_type="application/javascript")
     frontend_url = os.environ.get("FRONTEND_URL", "").rstrip("/") or "https://env-recovery-build.preview.emergentagent.com"
     bg = tenant.get("widget_bg", "#1A202C")
     bubble = tenant.get("bubble_color", "#48BB78")
@@ -1984,7 +2088,7 @@ async def embed_loader(tenant_id: str):
     bot_name = (tenant.get("bot_name") or tenant.get("full_name") or "AI Concierge").replace('"', '\\"')
     js = f"""
 (function(){{
-  if(window.__RozioKillerLoaded) return; window.__RozioKillerLoaded=true;
+  if(window.__KairoLoaded) return; window.__KairoLoaded=true;
   var TENANT="{tenant_id}", ORIGIN="{frontend_url}";
   var BG="{bg}", BUBBLE="{bubble}", ACCENT="{accent}", NAME="{bot_name}";
   var IS_MOBILE = window.matchMedia && window.matchMedia('(max-width: 640px)').matches;
@@ -2117,6 +2221,34 @@ async def admin_impersonate(user_id: str, admin=Depends(require_admin)):
     await log_audit(admin, "impersonate.start", target.get("email"), {"target_id": user_id})
     return {"token": token, "user": {"id": target["id"], "email": target["email"], "role": target.get("role", "client"), "full_name": target.get("full_name")}}
 
+# ============= PLATFORM KEYS (admin — e.g. Resend email) =============
+class PlatformKeysReq(BaseModel):
+    resend_api_key: Optional[str] = None
+    sender_email: Optional[str] = None
+
+@api_router.get("/admin/platform-keys")
+async def get_platform_keys(admin=Depends(require_admin)):
+    s = await db.settings.find_one({"id": "app_settings"}, {"_id": 0}) or {}
+    resend_plain = decrypt_secret(s.get("resend_api_key_enc", "")) if s.get("resend_api_key_enc") else ""
+    return {
+        "resend_configured": bool(resend_plain),
+        "resend_masked": mask_secret(resend_plain),
+        "sender_email": s.get("sender_email", "") or "",
+    }
+
+@api_router.put("/admin/platform-keys")
+async def save_platform_keys(req: PlatformKeysReq, admin=Depends(require_admin)):
+    updates = {}
+    if req.resend_api_key is not None and req.resend_api_key != "":
+        updates["resend_api_key_enc"] = encrypt_secret(req.resend_api_key.strip())
+    if req.sender_email is not None:
+        updates["sender_email"] = req.sender_email.strip()
+    if updates:
+        await db.settings.update_one({"id": "app_settings"}, {"$set": updates}, upsert=True)
+        await load_platform_email()
+        await log_audit(admin, "platform_keys.update", "resend", {"fields": list(updates.keys())})
+    return {"ok": True}
+
 # ============= AUDIT LOG =============
 @api_router.get("/admin/audit")
 async def admin_audit(q: str = Query("", description="search term"), admin=Depends(require_admin)):
@@ -2165,6 +2297,20 @@ async def training_transcripts(user=Depends(get_current_user)):
 async def training_corrections_list(user=Depends(get_current_user)):
     docs = await db.training_corrections.find({"user_id": user["id"]}, {"_id": 0}).sort("created_at", -1).to_list(100)
     return {"corrections": docs}
+
+@api_router.get("/me/training/analytics")
+async def training_analytics(user=Depends(get_current_user)):
+    """Approved answers ranked by how often they've been surfaced to the AI."""
+    docs = await db.training_corrections.find({"user_id": user["id"]}, {"_id": 0}).sort("used_count", -1).to_list(100)
+    total_uses = sum(int(d.get("used_count", 0)) for d in docs)
+    ranked = [{
+        "id": d.get("id"),
+        "question": d.get("question", ""),
+        "corrected": d.get("corrected", ""),
+        "used_count": int(d.get("used_count", 0)),
+        "last_used_at": d.get("last_used_at"),
+    } for d in docs]
+    return {"total_corrections": len(docs), "total_uses": total_uses, "ranked": ranked}
 
 @api_router.post("/me/training/correct")
 async def training_correct(req: TrainingCorrectionReq, user=Depends(get_current_user)):

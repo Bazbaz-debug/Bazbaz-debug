@@ -24,7 +24,7 @@ export default function SetupGuides() {
       <header className="border-b border-white/5 px-6 md:px-10 py-4 flex items-center justify-between">
         <div className="flex items-center gap-2">
           <div className="w-9 h-9 rounded-md bg-[#48BB78] flex items-center justify-center text-[#1A202C]"><Bot size={20} strokeWidth={2.5}/></div>
-          <span className="font-display font-black text-lg">Rozio-Killer &middot; Install Guides</span>
+          <span className="font-display font-black text-lg">Kairo &middot; Install Guides</span>
         </div>
         <Button data-testid="guides-back-btn" onClick={() => nav("/dashboard")} variant="outline" size="sm" className="border-white/10 bg-transparent text-white hover:bg-white/5"><ArrowLeft size={14} className="mr-1"/> Back to dashboard</Button>
       </header>

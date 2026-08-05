@@ -1,0 +1,28 @@
+{
+  "summary": "Iteration 15 (Kairo rebrand + Platform Keys + Approved-Answer Analytics + RAG chunks + SSE inbox). Backend pytest 11/11 PASSED (/app/backend/tests/test_iteration15.py): auth regressions (master admin, demo client, old admin@rozio.ai=401, whitespace/case email), Platform Keys GET/PUT (Fernet-encrypted, masked readback ending in last-4, raw key never leaks, non-admin=403), Approved-Answer Analytics used_count increments after real /api/chat/stream call with matching correction, RAG PDF upload returns file record and stores chunks (chat query with PDF keyword returns 200 with no injection error), SSE /api/messages/stream returns text/event-stream + initial ping frame with valid JWT and 401 with invalid token. Frontend (Playwright) 100% PASS: Landing renders hero/demo-badge/kairo-logo/use-cases/features-grid/waitlist-reservation/footer; no 'Rozio' text anywhere in body; Client Login nav to /login OK. Admin System tab Platform Keys card shows resend-key-input/resend-sender-input/platform-keys-save; saving a key immediately shows green resend-connected-badge. Audit tab lists 14 rows. View-As demo@client.com lands on /dashboard with orange impersonation-banner + exit-view-as-btn. Client Settings→Training shows training-analytics + training-total-uses. Messages inbox shows pulsing inbox-live-indicator with zero SSE console errors (EventSource opens cleanly). Exit View As returns to /admin. Zero JS console errors during full flow.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_iteration15.py",
+    "/app/test_reports/pytest/iter15_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "server.py is now 2345 lines — long-overdue for splitting into routers (auth, admin, platform_keys, training, chat_stream, sse). Same feedback carried from iteration_14.",
+    "Dashboard.jsx is 1136 lines with MessagesInbox, TrainingCenter, SettingsPanel, KnowledgeBase all inline — should be extracted for readability and code-splitting.",
+    "SSE endpoint /api/messages/stream authenticates via ?token= in the URL. Full JWTs will end up in web server access logs / browser history — consider a short-lived one-shot stream-ticket exchanged for the SSE connection instead of shipping the primary JWT in the query string.",
+    "chat_stream corrections analytics increments used_count for EVERY chat that has any correction defined for the tenant — regardless of whether the visitor's question is actually related. Metric is closer to 'exposure to LLM' than 'actual use'. Might want to gate the $inc on keyword overlap between the visitor message and the correction question.",
+    "GET /api/admin/platform-keys performs Fernet decrypt on every call just to compute the mask — same hot-path critique as iteration_14; store a masked_hint at write time.",
+    "SSE gen() runs 300 iterations of asyncio.sleep(2) inside a request handler — if the client disconnects mid-stream, there's no cancellation check (the loop keeps running until 10 min elapses). Wrap in try/except CancelledError or check disconnect via request.is_disconnected()."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration15.py"
+  ],
+  "success_rate": {"backend": "100% (11/11 passed)", "frontend": "100% (7/7 flows passed)"},
+  "test_credentials": "Master admin: baazisufi23@gmail.com / Bigbaaz23  |  Demo client: demo@client.com / Demo@12345",
+  "seed_data_creation": "Test suite creates a TEST_iter15 training correction (deleted after assertion), uploads a TEST_iter15.pdf via /api/knowledge/upload (deleted after assertion), and persists a real Fernet-encrypted Resend platform key 're_UI_TEST_zzzzzzzzzz1234' with sender 'uitest@example.com' (still in settings.app_settings — retained intentionally to prove GET readback works; can be overwritten anytime by main agent through the UI).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Backend regression suite lives at /app/backend/tests/test_iteration15.py (run with `pytest ... -o addopts=''` because backend/pytest.ini forces xdist which double-collects the fixture — this shows up as scary 'collecting 0 items' output in worker mode but works when disabled). Cold-start still ~45s for first /api/auth/login due to bcrypt + avatar gen; test includes 3-retry helper. SSE valid-token test consumes ~64 bytes of the stream then closes cleanly. If /api/knowledge/upload starts returning a listing shape change, test_iteration15 already handles both list and {files: [...]} responses.",
+  "rca of the issue": "N/A — all 11 backend endpoints and 7 UI flows pass. No blocker, no minor bug. Code-review comments above are quality/tech-debt items, not defects."
+}

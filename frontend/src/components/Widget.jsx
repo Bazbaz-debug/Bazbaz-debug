@@ -668,7 +668,7 @@ export default function Widget({ tenant, colors, catalog, embedded = false, onCl
         </button>
       </div>
       <div className="px-3 pb-2 text-center">
-        <p className="text-[9px] uppercase tracking-widest text-white/25 font-bold">Powered by Rozio-Killer AI</p>
+        <p className="text-[9px] uppercase tracking-widest text-white/25 font-bold">Powered by Kairo AI</p>
       </div>
     </div>
   );

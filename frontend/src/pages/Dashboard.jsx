@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { Upload, Sparkles, CalendarDays, Palette, Bot, Link2, FileText, Copy, Check, Maximize2, CalendarClock, Video, Clock, Ban, Plus, Trash2, Image as ImageIcon, Settings2, Home, MessagesSquare, BookOpen, Send, User, Zap, Loader2, Activity, ShieldAlert, X, GraduationCap, KeyRound } from "lucide-react";
@@ -262,7 +262,33 @@ function MessagesInbox({ tenantId }) {
     } catch {}
   }, []);
 
-  useEffect(() => { loadConvs(); const t = setInterval(loadConvs, 8000); return () => clearInterval(t); }, [loadConvs]);
+  const activeIdRef = useRef(null);
+  useEffect(() => { activeIdRef.current = activeId; }, [activeId]);
+
+  // Live inbox via Server-Sent Events — updates push in instantly, no manual refresh
+  useEffect(() => {
+    loadConvs();
+    const token = localStorage.getItem("rk_token");
+    if (!token) return;
+    const url = `${process.env.REACT_APP_BACKEND_URL}/api/messages/stream?token=${encodeURIComponent(token)}`;
+    const es = new EventSource(url);
+    es.onmessage = (e) => {
+      try {
+        const data = JSON.parse(e.data);
+        if (data.type === "update" && data.conversations?.length) {
+          setConvs((prev) => {
+            const map = new Map(prev.map((c) => [c.session_id, c]));
+            data.conversations.forEach((c) => map.set(c.session_id, c));
+            return Array.from(map.values()).sort((a, b) => (b.last_at || "").localeCompare(a.last_at || ""));
+          });
+          if (activeIdRef.current && data.conversations.some((c) => c.session_id === activeIdRef.current)) {
+            loadThread(activeIdRef.current);
+          }
+        }
+      } catch {}
+    };
+    return () => es.close();
+  }, [loadConvs, loadThread]);
   useEffect(() => { if (activeId) loadThread(activeId); }, [activeId, loadThread]);
 
   const sendHumanReply = async () => {
@@ -283,7 +309,7 @@ function MessagesInbox({ tenantId }) {
       <div className="bg-[#141B24] border border-white/5 rounded-2xl overflow-hidden flex flex-col">
         <div className="px-4 py-3 border-b border-white/5 flex items-center justify-between">
           <p className="font-display font-bold text-sm">Inbox <span className="text-[#48BB78] font-mono ml-1">{convs.length}</span></p>
-          <span className="text-[10px] uppercase tracking-widest font-bold text-white/40">Live</span>
+          <span className="text-[10px] uppercase tracking-widest font-bold text-[#48BB78] flex items-center gap-1.5" data-testid="inbox-live-indicator"><span className="w-1.5 h-1.5 rounded-full bg-[#48BB78] animate-pulse"/> Live</span>
         </div>
         <div className="flex-1 overflow-y-auto rk-scroll" data-testid="inbox-list">
           {convs.length === 0 ? (
@@ -592,13 +618,19 @@ function IntegrationsHub() {
 function TrainingCenter() {
   const [transcripts, setTranscripts] = useState([]);
   const [corrections, setCorrections] = useState([]);
+  const [analytics, setAnalytics] = useState({ total_corrections: 0, total_uses: 0, ranked: [] });
   const [edits, setEdits] = useState({});
   const [savingId, setSavingId] = useState(null);
   const load = useCallback(async () => {
     try {
-      const [t, c] = await Promise.all([api.get("/me/training/transcripts"), api.get("/me/training/corrections")]);
+      const [t, c, a] = await Promise.all([
+        api.get("/me/training/transcripts"),
+        api.get("/me/training/corrections"),
+        api.get("/me/training/analytics"),
+      ]);
       setTranscripts(t.data.transcripts || []);
       setCorrections(c.data.corrections || []);
+      setAnalytics(a.data || { total_corrections: 0, total_uses: 0, ranked: [] });
     } catch {}
   }, []);
   useEffect(() => { load(); }, [load]);
@@ -617,6 +649,37 @@ function TrainingCenter() {
   const removeCorrection = async (id) => { await api.delete(`/me/training/corrections/${id}`); toast.success("Correction removed"); await load(); };
   return (
     <div className="space-y-6" data-testid="training-center">
+      <div className="grid sm:grid-cols-3 gap-4" data-testid="training-analytics">
+        <div className="bg-[#141B24] border border-white/5 rounded-2xl p-5">
+          <p className="text-[10px] uppercase tracking-[0.25em] font-bold text-[#48BB78] mb-1">Approved answers</p>
+          <p className="font-display font-black text-3xl">{analytics.total_corrections}</p>
+        </div>
+        <div className="bg-[#141B24] border border-white/5 rounded-2xl p-5">
+          <p className="text-[10px] uppercase tracking-[0.25em] font-bold text-[#48BB78] mb-1">Times used by AI</p>
+          <p className="font-display font-black text-3xl" data-testid="training-total-uses">{analytics.total_uses}</p>
+        </div>
+        <div className="bg-[#141B24] border border-white/5 rounded-2xl p-5">
+          <p className="text-[10px] uppercase tracking-[0.25em] font-bold text-[#48BB78] mb-1">Top answer</p>
+          <p className="text-sm text-white/80 truncate mt-1">{analytics.ranked?.[0]?.corrected || "—"}</p>
+          <p className="text-xs text-white/40 mt-0.5">{analytics.ranked?.[0]?.used_count || 0} uses</p>
+        </div>
+      </div>
+      {analytics.ranked && analytics.ranked.length > 0 && (
+        <Card title="Which answers pay off" subtitle="Your approved answers ranked by how often the AI has used them.">
+          <ul className="space-y-2" data-testid="analytics-ranked-list">
+            {analytics.ranked.slice(0, 8).map((r, i) => (
+              <li key={r.id} className="flex items-center gap-3 bg-[#0D1117] border border-white/5 rounded-lg px-3 py-2">
+                <span className="text-[#48BB78] font-display font-black text-sm w-6">#{i + 1}</span>
+                <div className="min-w-0 flex-1">
+                  {r.question && <p className="text-[11px] text-white/40 truncate">Q: {r.question}</p>}
+                  <p className="text-sm text-white truncate">{r.corrected}</p>
+                </div>
+                <span className="text-xs font-bold text-[#48BB78] flex-shrink-0">{r.used_count} uses</span>
+              </li>
+            ))}
+          </ul>
+        </Card>
+      )}
       <Card title="Approved answers" subtitle="Corrections you've saved. The AI prefers these over its own phrasing.">
         {corrections.length === 0 ? (
           <p className="text-sm text-[#A0AEC0]">No approved answers yet. Correct a transcript below to train your bot.</p>

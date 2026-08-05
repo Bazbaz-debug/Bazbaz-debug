@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
+import { KairoMark } from "@/components/KairoLogo";
 import { toast } from "sonner";
 import api from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
@@ -136,9 +137,9 @@ export default function Admin() {
     <div className="min-h-screen bg-[#1A202C] text-white relative">
       <header className="border-b border-white/5 px-6 md:px-10 py-4 flex items-center justify-between sticky top-0 bg-[#1A202C]/95 backdrop-blur z-30">
         <div className="flex items-center gap-2">
-          <div className="w-9 h-9 rounded-md bg-[#48BB78] flex items-center justify-center text-[#1A202C]"><Bot size={20} strokeWidth={2.5}/></div>
+          <div className="w-9 h-9 rounded-md bg-[#48BB78] flex items-center justify-center text-[#1A202C]"><KairoMark size={22}/></div>
           <div>
-            <p className="font-display font-black text-lg leading-none">Rozio-Killer</p>
+            <p className="font-display font-black text-lg leading-none">Kairo</p>
             <p className="text-xs text-[#48BB78] mt-0.5 uppercase tracking-[0.2em] font-bold flex items-center gap-1"><Shield size={10}/> Admin Control Center</p>
           </div>
         </div>
@@ -365,6 +366,7 @@ export default function Admin() {
 
           {/* SYSTEM */}
           <TabsContent value="settings" className="space-y-6">
+            <PlatformKeysCard onSaved={load} />
             <div className="bg-[#2D3748] rounded-md p-6 border border-white/5">
               <h3 className="font-display font-bold text-lg mb-4">Env / Credentials Reference</h3>
               <div className="grid md:grid-cols-2 gap-3 text-sm">
@@ -587,6 +589,54 @@ function Stat({ icon, label, v }) {
     <div className="bg-[#2D3748] border border-white/5 rounded-md p-3">
       <div className="flex items-center gap-1.5 text-[#48BB78] text-[10px] uppercase font-bold tracking-[0.15em] mb-1">{icon}<span>{label}</span></div>
       <div className="font-display font-black text-2xl tracking-tighter">{v}</div>
+    </div>
+  );
+}
+
+function PlatformKeysCard({ onSaved }) {
+  const [info, setInfo] = useState({ resend_configured: false, resend_masked: "", sender_email: "" });
+  const [resendKey, setResendKey] = useState("");
+  const [sender, setSender] = useState("");
+  const [saving, setSaving] = useState(false);
+  useEffect(() => {
+    api.get("/admin/platform-keys").then(r => { setInfo(r.data); setSender(r.data.sender_email || ""); }).catch(() => {});
+  }, []);
+  const save = async () => {
+    setSaving(true);
+    try {
+      const body = { sender_email: sender };
+      if (resendKey.trim()) body.resend_api_key = resendKey.trim();
+      await api.put("/admin/platform-keys", body);
+      toast.success("Platform email keys saved — emails now send live");
+      setResendKey("");
+      const r = await api.get("/admin/platform-keys"); setInfo(r.data);
+      onSaved && onSaved();
+    } catch { toast.error("Could not save keys"); }
+    finally { setSaving(false); }
+  };
+  return (
+    <div className="bg-[#2D3748] rounded-md p-6 border border-white/5" data-testid="platform-keys-card">
+      <div className="flex items-center justify-between mb-1">
+        <h3 className="font-display font-bold text-lg flex items-center gap-2"><Mail size={16} className="text-[#48BB78]"/> Email Delivery (Resend)</h3>
+        {info.resend_configured
+          ? <span data-testid="resend-connected-badge" className="inline-flex items-center gap-1 text-[10px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full bg-[#48BB78] text-[#0D1117]"><CheckCircle2 size={10} strokeWidth={3}/> Connected {info.resend_masked}</span>
+          : <span className="text-[10px] uppercase tracking-widest font-bold text-[#ED8936]">Demo mode · not sending</span>}
+      </div>
+      <p className="text-sm text-[#A0AEC0] mb-4">Add your Resend API key to turn on live signup & booking emails. The key is encrypted before it's stored.</p>
+      <div className="grid md:grid-cols-2 gap-3">
+        <div>
+          <label className="text-xs text-[#A0AEC0] font-bold uppercase tracking-widest">Resend API Key</label>
+          <Input data-testid="resend-key-input" type="password" value={resendKey} onChange={e => setResendKey(e.target.value)} placeholder={info.resend_configured ? "Enter a new key to replace" : "re_..."} className="bg-[#1A202C] border-white/10 text-white h-10 mt-1 font-mono text-xs"/>
+        </div>
+        <div>
+          <label className="text-xs text-[#A0AEC0] font-bold uppercase tracking-widest">Sender Email</label>
+          <Input data-testid="resend-sender-input" value={sender} onChange={e => setSender(e.target.value)} placeholder="hello@yourdomain.com" className="bg-[#1A202C] border-white/10 text-white h-10 mt-1 text-sm"/>
+        </div>
+      </div>
+      <Button data-testid="platform-keys-save" onClick={save} disabled={saving} className="mt-4 bg-[#48BB78] hover:bg-[#38A169] text-[#1A202C] hover:text-white font-bold rounded-md">
+        {saving ? "Saving…" : "Save & go live"}
+      </Button>
+      <p className="text-[11px] text-[#A0AEC0] mt-3">Get a free key at <a href="https://resend.com/api-keys" target="_blank" rel="noreferrer" className="text-[#48BB78] link-underline">resend.com/api-keys</a> — verify your sending domain first.</p>
     </div>
   );
 }
