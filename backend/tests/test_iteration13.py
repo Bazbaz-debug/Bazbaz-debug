@@ -3,7 +3,7 @@ import os, io, uuid, time
 import pytest
 import requests
 
-BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "https://live-bot-preview.preview.emergentagent.com").rstrip("/")
+BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "https://code-sync-108.preview.emergentagent.com").rstrip("/")
 TENANT_ID = "3c1aea51-4eac-49fd-8198-cc5bf1e155dc"
 DEMO_EMAIL = "demo@client.com"
 DEMO_PW = "Demo@12345"
