@@ -1,108 +1,149 @@
 {
-  "typography": {
-    "heading_font": "Cabinet Grotesk",
-    "body_font": "Satoshi",
-    "mono_font": "JetBrains Mono",
-    "h1": "text-5xl lg:text-6xl tracking-tighter font-black text-white",
-    "h2": "text-3xl lg:text-4xl tracking-tight font-bold text-white",
-    "h3": "text-xl lg:text-2xl tracking-tight font-semibold text-gray-100",
-    "body": "text-base text-gray-400 leading-relaxed",
-    "labels": "text-xs tracking-[0.2em] uppercase font-bold text-[#48BB78]"
+  "brand": {
+    "name": "Kairo",
+    "tagline": "The right moment.",
+    "description": "An AI concierge that catches high-intent visitors. Built by Baazi Suufi. Currently in demo mode, strictly for Upwork clients."
   },
+  "theme_preference": "dark",
   "colors": {
-    "background": "#1A202C",
-    "surface": "#2D3748",
-    "surface_hover": "#4A5568",
+    "background": "#0B1016",
     "primary": "#48BB78",
     "primary_hover": "#38A169",
-    "text_primary": "#FFFFFF",
-    "text_secondary": "#A0AEC0",
-    "border": "#2D3748",
-    "glass_panel": "rgba(26, 32, 44, 0.7)",
-    "glass_border": "rgba(255, 255, 255, 0.08)"
+    "surface": "#131820",
+    "text_main": "#FFFFFF",
+    "text_muted": "#A1A1AA",
+    "glass": "rgba(255, 255, 255, 0.03)",
+    "glass_border": "rgba(255, 255, 255, 0.1)"
+  },
+  "typography": {
+    "heading": "Outfit, sans-serif",
+    "body": "DM Sans, sans-serif",
+    "instructions": "Use font-light for subheadings and font-bold/black for impact headers. All large headings (>text-4xl) MUST have tracking-tight or tracking-tighter."
   },
   "visual_enhancers": {
-    "shadows": {
-      "glow": "0 0 24px rgba(72, 187, 120, 0.15)",
-      "ambient": "0 10px 40px -10px rgba(0,0,0,0.7)"
-    },
-    "textures": "Use subtle CSS noise overlays or dot grids on the right sandbox pane to prevent digital flatness.",
-    "borders": "1px solid border-white/10 for glassmorphism. Avoid heavy drop shadows, use inner-strokes."
-  },
-  "component_guidelines": {
-    "cards": "Flat solid surfaces using bg-[#2D3748] with border-[#4A5568]. Inside padding must be generous (p-6 or p-8). Hover state adds a subtle border glow (border-[#48BB78]/50).",
-    "buttons": "Sharp-edged or slightly rounded (rounded-md). Primary buttons: bg-[#48BB78] text-[#1A202C] font-bold. Hover: bg-[#38A169] text-white shadow-[0_0_15px_rgba(72,187,120,0.4)].",
-    "tabs": "Underline minimalist style or pill-based. Active tab should have text-[#48BB78] and a visible indicator (like Framer Motion underline).",
-    "chat_widget": "Floating crystal glass variant. backdrop-blur-xl bg-[#1A202C]/85 border border-white/10 shadow-2xl. User bubbles: bg-[#48BB78] text-[#1A202C]. AI bubbles: bg-[#2D3748] text-white.",
-    "color_picker": "Hide native input. Use custom styled circular swatches. Active state gets ring-2 ring-[#48BB78] ring-offset-2 ring-offset-[#1A202C].",
-    "calendar": "Shadcn calendar styled for dark mode. #48BB78 for selected dates, dark gray hover states. Remove outer borders for a seamless look."
-  },
-  "grids": {
-    "dashboard": "Split-screen architecture. Left Pane (Config): w-full lg:w-[45%] lg:max-w-xl overflow-y-auto px-6 py-8 md:px-12 md:py-12. Right Pane (Sandbox): hidden lg:flex lg:flex-1 h-screen sticky top-0 bg-[#0D1117] relative items-center justify-center.",
-    "landing_page": "Bento Grid ('Tetris' Mode). Asymmetric layouts mixing col-span-4 and col-span-8. Generous padding (py-24 to py-32).",
-    "spacing": "Gap-8 to gap-12 between major sections. Inner card padding p-6 or p-8."
+    "backgrounds": "Overlay the background with the custom .noise and .dot-grid utilities. Use .float-orb for neon-green glowing shapes behind the hero and waitlist sections.",
+    "buttons": "Implement the .btn-luxe class for primary CTAs: high-contrast dark background, neon green border (1px), subtle green glow shadow, and a shiny highlight effect on hover.",
+    "cards": "Use .glass for panels with a 1px border-white/10. Apply .neon-glow-hover to feature grid items.",
+    "glassmorphism": "Must use backdrop-blur-xl with a slightly saturated, low-opacity background (e.g., bg-white/5) for headers/nav to maintain high optical clarity."
   },
   "layouts": {
-    "sandbox_preview": "The right pane should look like a mock website. Add a fake header and hero, with the AI Chat Widget fixed to the bottom right of this specific container (absolute positioning relative to the right pane).",
-    "admin_panel": "Dense data table layout. Avoid bulky cards. Use border-collapse styling with a single 1px bottom border per row."
+    "hero": "flex-col items-center text-center justify-center min-h-[90vh] max-w-5xl mx-auto. Heavy use of negative space.",
+    "use_cases": "Bento 'Tetris' Grid. 1 dominant hero card (col-span-full md:col-span-8), and smaller supporting cards (md:col-span-4). Wide gap-8.",
+    "features": "Dense high-contrast technical grid. grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4."
   },
-  "motion": {
-    "hover_states": "Buttons scale up slightly (scale-[1.02]) with a 0.2s ease-out transform.",
-    "page_transitions": "Fade and slight slide-up (translate-y-4 to translate-y-0) staggered on children.",
-    "widget_preview": "Animate chat bubbles popping in with framer-motion (spring physics: stiffness 400, damping 25)."
+  "image_urls": {
+    "shopify_use_case": {
+      "url": "https://images.unsplash.com/photo-1674027392857-9aed6e8ecab9?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NTY2Njd8MHwxfHNlYXJjaHw0fHxzaG9waWZ5JTIwZGFzaGJvYXJkJTIwZGFya3xlbnwwfHx8fDE3ODU5NjQ5ODN8MA&ixlib=rb-4.1.0&q=85",
+      "description": "3D cart/dashboard representation for the Shopify Store Owner card",
+      "category": "use_cases"
+    },
+    "marketing_use_case": {
+      "url": "https://images.unsplash.com/photo-1658953229664-e8d5ebd039ba?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjAzNDR8MHwxfHNlYXJjaHwyfHxtYXJrZXRpbmclMjBhbmFseXRpY3MlMjBkYXJrfGVufDB8fHx8MTc4NTk2NDk4M3ww&ixlib=rb-4.1.0&q=85",
+      "description": "Dark glow analytics dashboard for the Ads/Marketing Agency card",
+      "category": "use_cases"
+    },
+    "abstract_glow_background": {
+      "url": "https://images.pexels.com/photos/7788742/pexels-photo-7788742.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
+      "description": "Defocus green bokeh - position with opacity-20 mixed mode behind UI layers",
+      "category": "backgrounds"
+    },
+    "abstract_orb": {
+      "url": "https://images.unsplash.com/photo-1781450601840-3528be660057?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjY2NzZ8MHwxfHNlYXJjaHwxfHxhYnN0cmFjdCUyMGdsb3dpbmclMjBvcmIlMjBncmVlbnxlbnwwfHx8fDE3ODU5NjQ5ODN8MA&ixlib=rb-4.1.0&q=85",
+      "description": "Glowing orb to use creatively within the Waitlist booking card.",
+      "category": "backgrounds"
+    }
   },
-  "accessibility": {
-    "contrast": "Ensure text-secondary (#A0AEC0) against #1A202C passes WCAG AA. Primary text (#FFFFFF) is AAA.",
-    "focus": "focus-visible:ring-2 focus-visible:ring-[#48BB78] focus-visible:ring-offset-2 focus-visible:ring-offset-[#1A202C]",
-    "reduced_motion": "Wrap all animations with prefers-reduced-motion media query checks."
-  },
-  "media": {
-    "image_urls": [
-      {
-        "url": "https://images.pexels.com/photos/13108284/pexels-photo-13108284.jpeg",
-        "category": "AI Avatar Video Placeholder",
-        "description": "Professional portrait for the live AI video widget playing in the chat."
-      },
-      {
-        "url": "https://images.unsplash.com/photo-1731132198530-e4b2dc51d511?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjAzMzV8MHwxfHNlYXJjaHwxfHxuaWtlJTIwcnVubmluZyUyMHNob2VzJTIwZGFyayUyMGJhY2tncm91bmR8ZW58MHx8fHwxNzg1NzM2NjExfDA&ixlib=rb-4.1.0&q=85",
-        "category": "Chat Widget Product Card",
-        "description": "E-commerce product shown inside the chat widget simulation."
-      },
-      {
-        "url": "https://images.pexels.com/photos/7562087/pexels-photo-7562087.jpeg",
-        "category": "Landing Page Hero Background",
-        "description": "Abstract futuristic dark/neon tech pattern for landing page."
-      },
-      {
-        "url": "https://images.unsplash.com/photo-1669220235918-04cbf9e054b9",
-        "category": "Partner Logo",
-        "description": "Sponsor/Partner logo for trust band on the landing page."
-      }
-    ]
-  },
-  "3d_libraries": {
-    "recommendation": "Use framer-motion for UI physics. For the Sandbox background, implement a subtle CSS-based dot matrix or TSParticles (network mesh) to feel like an active AI zone."
-  },
+  "sections_blueprint": [
+    {
+      "name": "Header / Sticky Nav",
+      "layout": "Fixed top-0 w-full z-50 glass",
+      "elements": "Logo 'Kairo' (font-bold text-xl), nav links, 'Client Login' subtle link, and 'Book on Upwork' CTA btn-luxe.",
+      "data_testid": "sticky-header"
+    },
+    {
+      "name": "Hero Section",
+      "layout": "Centered alignment, large padding (py-32), relative wrapper with float-orb inside.",
+      "elements": "1. Banner/Badge: '🚨 IN DEMO MODE — UPWORK CLIENTS ONLY' (Neon green border, very small uppercase text, pill shape).\n2. H1: 'Kairo. The right moment.' (Huge, tracking-tighter, gradient-text-primary).\n3. Subtitle: 'An AI concierge that catches high-intent visitors.'\n4. Actions: 'Reserve Your Spot' (btn-luxe) and 'See How It Works' (ghost button).",
+      "data_testid": "hero-section"
+    },
+    {
+      "name": "Integrations Marquee",
+      "layout": "w-full overflow-hidden py-12 border-y border-white/10",
+      "elements": "Use marquee-track utility. Text items separated by a .star element. Text: Shopify, WordPress, Webflow, Wix, Squarespace.",
+      "data_testid": "marquee-section"
+    },
+    {
+      "name": "Use Cases Bento Grid",
+      "layout": "Container max-w-7xl mx-auto py-24. CSS Grid with varied spans.",
+      "elements": "Card 1 (Large): 'Shopify store owner who just needs a fix' + image 'shopify_use_case'. Card 2 (Medium): 'Ads/Marketing person needing high conversions' + image 'marketing_use_case'. Card 3 (Small): 'General SMB looking for automation'. Use .glass and .neon-glow-hover.",
+      "data_testid": "use-cases-section"
+    },
+    {
+      "name": "Feature Grid",
+      "layout": "Grid cols-1 md:cols-2 lg:cols-4 gap-4 py-24",
+      "elements": "Cards for: FAQ answers, Upsells, Order tracking, Photo-to-product, 95+ languages, Unified inbox, Voice call, Human handoff. Use Lucide-react icons, subtle 1px border, neon green accent on hover.",
+      "data_testid": "features-grid-section"
+    },
+    {
+      "name": "Reservation / Waitlist Area",
+      "layout": "Massive callout box, centered, dark surface, glowing orb image in background (mix-blend-screen).",
+      "elements": "H2: 'Not Available to the Public.' Sub: 'Kairo is exclusively offered to Upwork clients. Book a consultation with Baazi Suufi to reserve your waitlist spot.' CTA: 'Book on Upwork to Wait' (massive shiny button).",
+      "data_testid": "waitlist-reservation-section"
+    },
+    {
+      "name": "Testimonials",
+      "layout": "Flex cols md:flex-row gap-8 py-24",
+      "elements": "Featured CEO review card (large text, high contrast) and 1 supporting review card. Mention 'Rozio-Killer' evolution.",
+      "data_testid": "testimonials-section"
+    },
+    {
+      "name": "Footer",
+      "layout": "Massive padding py-32 bg-black border-t border-white/10",
+      "elements": "Huge 'Let's Talk' text (text-[10vw]), Upwork link, Logo, Copyright 2026 Kairo.",
+      "data_testid": "footer"
+    }
+  ],
+  "custom_css_utilities_to_add": [
+    ".dot-grid { background-image: radial-gradient(rgba(255, 255, 255, 0.1) 1px, transparent 1px); background-size: 24px 24px; }",
+    ".noise { background-image: url('data:image/svg+xml,%3Csvg viewBox=%220 0 200 200%22 xmlns=%22http://www.w3.org/2000/svg%22%3E%3Cfilter id=%22noiseFilter%22%3E%3CfeTurbulence type=%22fractalNoise%22 baseFrequency=%220.65%22 numOctaves=%223%22 stitchTiles=%22stitch%22/%3E%3C/filter%3E%3Crect width=%22100%25%22 height=%22100%25%22 filter=%22url(%23noiseFilter)%22/%3E%3C/svg%3E'); opacity: 0.04; mix-blend-mode: overlay; pointer-events: none; position: absolute; inset: 0; z-index: 50; }",
+    ".glass { background: rgba(255, 255, 255, 0.02); backdrop-filter: blur(16px); border: 1px solid rgba(255, 255, 255, 0.08); box-shadow: 0 4px 30px rgba(0, 0, 0, 0.1); }",
+    ".gradient-text-primary { background: linear-gradient(to right, #ffffff, #48BB78); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }",
+    ".btn-luxe { position: relative; background: #0B1016; color: #48BB78; border: 1px solid #48BB78; padding: 0.75rem 2rem; border-radius: 9999px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; transition: all 0.3s ease; box-shadow: 0 0 15px rgba(72, 187, 120, 0.2); overflow: hidden; }",
+    ".btn-luxe:hover { background: #48BB78; color: #0B1016; box-shadow: 0 0 30px rgba(72, 187, 120, 0.5); transform: translateY(-2px); }",
+    ".btn-luxe::after { content: ''; position: absolute; top: -50%; left: -50%; width: 200%; height: 200%; background: linear-gradient(transparent, rgba(255,255,255,0.3), transparent); transform: rotate(45deg); transition: 0.5s; opacity: 0; }",
+    ".btn-luxe:hover::after { opacity: 1; left: 100%; }",
+    ".neon-glow-hover { transition: box-shadow 0.3s ease, border-color 0.3s ease; }",
+    ".neon-glow-hover:hover { border-color: rgba(72, 187, 120, 0.5); box-shadow: 0 0 20px rgba(72, 187, 120, 0.15); z-index: 10; }",
+    ".marquee-track { display: flex; animation: scroll-left 20s linear infinite; white-space: nowrap; }",
+    ".marquee-track-reverse { display: flex; animation: scroll-right 20s linear infinite; white-space: nowrap; }",
+    ".float-orb { position: absolute; border-radius: 50%; filter: blur(100px); opacity: 0.3; animation: float-slow 10s ease-in-out infinite; background: #48BB78; }",
+    ".fade-up { animation: fade-up 0.8s cubic-bezier(0.16, 1, 0.3, 1) forwards; opacity: 0; transform: translateY(20px); }",
+    ".link-underline { position: relative; }",
+    ".link-underline::after { content: ''; position: absolute; width: 100%; transform: scaleX(0); height: 1px; bottom: 0; left: 0; background-color: #48BB78; transform-origin: bottom right; transition: transform 0.25s ease-out; }",
+    ".link-underline:hover::after { transform: scaleX(1); transform-origin: bottom left; }",
+    "@keyframes scroll-left { 0% { transform: translateX(0); } 100% { transform: translateX(-50%); } }",
+    "@keyframes scroll-right { 0% { transform: translateX(-50%); } 100% { transform: translateX(0); } }",
+    "@keyframes float-slow { 0%, 100% { transform: translate(0, 0); } 50% { transform: translate(20px, -20px); } }",
+    "@keyframes fade-up { to { opacity: 1; transform: translateY(0); } }"
+  ],
   "instructions_to_main_agent": [
-    "CRITICAL: The project uses `.js` (JSX) files, NOT `.tsx`. Do not use TypeScript syntax.",
-    "Always use 'Cabinet Grotesk' for Headings and 'Satoshi' for Body. Import them via Google Fonts or Fontshare in index.css.",
-    "Implement the Dashboard using a strict two-pane layout where the right side (Sandbox) is visually distinct with a darker #0D1117 background.",
-    "The AI Widget inside the Sandbox must feature a 'Live Video' container at the top (using the Avatar placeholder image) with a pulsing #48BB78 status dot.",
-    "Knowledge Ingestion tab requires a drag-and-drop zone styled with dashed borders and hover tint.",
-    "Widget Branding tab must include at least 3 custom color pickers.",
-    "Operational Matrix tab must contain a functional-looking calendar (Shadcn style) for booking slots.",
-    "All interactive and key informational elements MUST include a `data-testid` attribute (e.g., data-testid='login-button').",
-    "Use Lucide React for icons."
+    "Inject the custom_css_utilities_to_add directly into the src/index.css file (or App.css) to establish the brand's 'WOW' premium dark aesthetic.",
+    "Do NOT use 'Inter' for headings. Install/use 'Outfit' or 'Cabinet Grotesk' if possible, otherwise rely on the default sans with strong tracking limits.",
+    "Implement the 'Kairo' landing page using raw HTML+Tailwind for layout structure (bento grids, asymmetric overlapping).",
+    "Avoid Shadcn Cards if they feel too boxed in; favor raw div wrappers with the .glass utility and .neon-glow-hover.",
+    "Crucial requirement: Make the hero completely centered, and highlight the Upwork-exclusive/Demo-mode nature right away at the very top.",
+    "Use Framer Motion or the custom .fade-up utility to cascade elements into view on mount.",
+    "Create a 'Book to Wait' reservation block that acts as a strong CTA, distinct from standard SaaS signup buttons. Use the 'Book on Upwork' wording specifically."
   ],
   "UNIVERSAL_GUIDELINES_FOR_MAIN_AGENT": [
-    "You tend to converge toward generic outputs. In frontend design, this creates the 'AI slop' aesthetic. Avoid this: make creative, distinctive frontends.",
-    "DO NOT use dark colors as gradients. Keep surfaces solid with sharp 1px borders.",
-    "Create depth through layered design elements with z-index hierarchy and glassmorphism (backdrop-blur-xl).",
-    "You MUST NOT apply universal transition like 'transition: all'. Explicitly state transitions.",
-    "You MUST NOT center align the app container (.App { text-align: center; }).",
-    "Every interaction needs micro-animations - hover states, transitions.",
-    "NEVER use placeholder text for logos or images. Use the provided image URLs.",
-    "DO NOT use complete `transparent` background in headers or overlays where content scrolls under. Use solid colors or backdrop blurs.",
-    "Always apply GENERAL UI UX DESIGN GUIDELINES."
+    "You tend to converge toward generic, 'on distribution' outputs. Make creative, distinctive frontends that surprise and delight.",
+    "Dark colors look good when used independently without gradients. DO NOT use dark colors as gradients.",
+    "Create depth through layered design elements with z-index hierarchy.",
+    "Use glass-morphism effects with backdrop filters (12-24px blur). DO NOT use complete transparent backgrounds in headers or overlays.",
+    "You MUST NOT apply universal transition (e.g., transition: all). Add transitions for specific interactive elements like button, input excluding transforms.",
+    "You MUST NOT center align the app container in css. Center align explicit sections like Hero only.",
+    "Every interaction needs micro-animations - hover states, transitions, parallax effects, and entrance animations.",
+    "Use 2-3x more spacing than feels comfortable. Cramped designs look cheap.",
+    "All interactive and key informational elements MUST include a data-testid attribute."
   ]
 }
