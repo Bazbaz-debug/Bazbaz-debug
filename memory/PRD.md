@@ -30,17 +30,37 @@ Fix the widget preview bugs (voice call not working, uploaded logo not showing) 
 - ✅ **Booking URL now env-driven** — `REACT_APP_BOOKING_URL` in `frontend/.env` overrides the placeholder Upwork link on Landing.
 - ✅ Backend tests: 5/6 pass, 1 skipped due to LLM budget exhaustion (verified working end-to-end before budget ran out) · Frontend: 100% (iteration_13.json)
 
+## What's been implemented — 05 Aug 2026 (11-item SaaS roadmap)
+Phase 1 (UI polish):
+- ✅ **Crawl Sync feedback** — Sync button shows spinner + green success / red error toasts
+- ✅ **Dynamic branding** — closed launcher uses a generic message icon; widget header renders the client logo; Logo upload lives in Settings → Bot Identity
+- ✅ **Realistic dashboard** — `/api/me/metrics` returns lively sample numbers for fresh workspaces (is_sample flag); new `RecentActivity` feed via `/api/me/activity`
+- ✅ **Locked/centered layout** — main workspace wrapped in `max-w-[1200px] mx-auto w-full`, sidebar stays fixed
+- ✅ **Connected badge** — Admin Integration Health cards show a bold green "Connected" pill
+- ✅ **Full-screen preview** — Live Preview dialog expands edge-to-edge (w-screen/h-screen)
+Phase 2 (SaaS backend):
+- ✅ **Master admin** — baazisufi23@gmail.com (hashed, synced from .env each startup); admin@rozio.ai removed; login trims+lowercases email (trailing spaces OK) & preserves password spaces via `LoginReq` field_validator
+- ✅ **Client-specific embed** — snippet injects `data-workspace-id`; Install Guides shows the Workspace ID + isolation note
+- ✅ **Integrations Hub** — `/api/me/integrations` GET/PUT/DELETE with Fernet-encrypted secrets (FERNET_KEY in .env), values masked (••••last4), never returned in plaintext. Providers: Zoom/Calendly/Slack/Stripe/HubSpot
+- ✅ **RBAC View As** — `POST /api/admin/impersonate/{id}` mints a 2h token carrying `impersonated_by`; frontend swaps tokens, shows orange banner + Exit View As
+- ✅ **Audit log** — `log_audit()` on settings/client/integration/impersonation/training mutations; `GET /api/admin/audit?q=` searchable; new Admin "Audit" tab
+- ✅ **Training Center** — `/api/me/training/transcripts|corrections|correct`; approved answers injected into the chat system prompt as highest-priority responses; new Settings "Training" tab
+- ✅ Tested: backend 16/16 pytest, frontend 11/11 Playwright flows (iteration_14.json)
+
+## Key endpoints added (05 Aug)
+- `GET /api/me/activity` · `GET/PUT/DELETE /api/me/integrations` · `POST /api/admin/impersonate/{user_id}`
+- `GET /api/admin/audit?q=` · `GET /api/me/training/transcripts` · `GET/POST/DELETE /api/me/training/corrections|correct`
+
 ## Prioritised backlog
 - **P1** WebSocket / SSE push for the Messages inbox (currently polls every 8s)
-- **P1** Order tracking with visual package journey (Shopify Order Status API integration)
-- **P1** Photo-to-product search (GPT 5.6 Terra vision → catalog matcher)
-- **P2** Split `Dashboard.jsx` (now ~880 lines) into per-section files
-- **P2** Redesign Admin panel with the same sidebar layout
-- **P2** Widget must display `human_agent` messages so visitors see the human takeover in real-time (currently only visible in the owner's inbox)
-- **P2** k-NN retrieval / RAG chunking over PDFs (currently dumps first 6KB per file)
-- **P2** Twilio call recording + voicemail-to-transcript
-- **P3** UI presets (Minimal / Bold / Luxury) + "Copy widget mockup image" button
-- **P3** Email intake for the unified inbox (SendGrid or Resend inbound)
+- **P2** Split `Dashboard.jsx` (~1073 lines) & `server.py` (~2199 lines) into per-section files/routers
+- **P2** Widget shows `human_agent` messages live (visitor-side takeover)
+- **P2** k-NN / RAG chunking over PDFs (currently dumps first 6KB per file)
+- **P2** Redesign Admin panel with the dashboard sidebar layout
+- **P3** UI presets (Minimal / Bold / Luxury) + "Copy widget mockup image"
+- **P3** Email intake for the unified inbox (SendGrid / Resend inbound)
+
+## Old (04 Aug) backlog — superseded items removed above
 
 ## Key architecture
 - Frontend: React 19 + TailwindCSS + Sonner + Lucide icons + shadcn/ui
