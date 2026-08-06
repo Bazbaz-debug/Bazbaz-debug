@@ -95,7 +95,7 @@ export default function Dashboard() {
 
       {/* Live Preview Modal — full viewport, edge-to-edge */}
       <Dialog open={previewOpen} onOpenChange={setPreviewOpen}>
-        <DialogContent className="bg-[#0D1117] border-0 text-white max-w-none w-screen h-screen sm:h-screen p-0 overflow-hidden flex flex-col rounded-none translate-x-0 translate-y-0 top-0 left-0 sm:rounded-none data-[state=open]:!zoom-in-100">
+        <DialogContent className="bg-[#0D1117] border-0 text-white !max-w-none !w-screen !h-screen !p-0 overflow-hidden flex flex-col !rounded-none !fixed !left-0 !top-0 !translate-x-0 !translate-y-0 data-[state=open]:!zoom-in-100 data-[state=closed]:!zoom-out-100">
           <DialogHeader className="px-6 py-3 border-b border-white/10 flex-shrink-0">
             <DialogTitle className="font-display text-xl">Live Preview &mdash; test your widget on any site</DialogTitle>
           </DialogHeader>

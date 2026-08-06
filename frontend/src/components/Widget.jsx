@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from "react";
-import { Bot, Send, X, Loader2, Mic, MicOff, Volume2, Sparkles, PhoneCall, PhoneOff, ShoppingCart, Camera, Package, Headset, CheckCircle2, Circle } from "lucide-react";
+import { Bot, Send, X, Loader2, Mic, MicOff, Volume2, Sparkles, PhoneCall, PhoneOff, ShoppingCart, Camera, Package, Headset, CheckCircle2, Circle, MessageCircle, ArrowRight } from "lucide-react";
 import { API } from "@/lib/api";
 import { toast } from "sonner";
 
@@ -53,6 +53,14 @@ export default function Widget({ tenant, colors, catalog, embedded = false, onCl
   const [speaking, setSpeaking] = useState(false);
   const [recording, setRecording] = useState(false);
   const [voiceMode, setVoiceMode] = useState(true);
+  const [showNudge, setShowNudge] = useState(false);
+
+  // Proactive nudge: 30s after the widget is closed, invite the visitor in.
+  useEffect(() => {
+    if (open) { setShowNudge(false); return; }
+    const t = setTimeout(() => setShowNudge(true), 30000);
+    return () => clearTimeout(t);
+  }, [open]);
   const [lipsyncMode, setLipsyncMode] = useState(false);
   const [videoUrl, setVideoUrl] = useState(null);
   const [generatingVideo, setGeneratingVideo] = useState(false);
@@ -443,9 +451,18 @@ export default function Widget({ tenant, colors, catalog, embedded = false, onCl
 
   if (!open) {
     return (
-      <button data-testid="widget-launcher-btn" onClick={() => setOpen(true)} className="absolute bottom-6 right-6 w-14 h-14 rounded-full flex items-center justify-center text-white shadow-2xl" style={{ background: accent }}>
-        <Bot size={24}/>
-      </button>
+      <div className="absolute bottom-6 right-6 flex flex-col items-end gap-3">
+        {showNudge && (
+          <div data-testid="widget-nudge" className="relative mr-1 mb-1 max-w-[220px] rounded-2xl rounded-br-md px-4 py-3 text-[13px] font-semibold text-white shadow-2xl animate-in fade-in slide-in-from-bottom-2 duration-500" style={{ background: bg, border: `1px solid ${accent}55`, boxShadow: `0 10px 40px ${accent}33` }}>
+            <button onClick={() => setShowNudge(false)} className="absolute -top-2 -left-2 w-5 h-5 rounded-full bg-[#0D1117] border border-white/15 text-white/60 flex items-center justify-center hover:text-white" aria-label="Dismiss"><X size={11}/></button>
+            <span className="mr-1">&#128075;</span> Talk to us here — in any language.
+            <ArrowRight size={16} className="absolute -bottom-3 right-3 rotate-90" style={{ color: accent }}/>
+          </div>
+        )}
+        <button data-testid="widget-launcher-btn" onClick={() => { setOpen(true); setShowNudge(false); }} className="w-15 h-15 rounded-full flex items-center justify-center text-[#0D1117] shadow-2xl transition-transform hover:scale-105" style={{ width: 60, height: 60, background: `linear-gradient(135deg, ${accent}, ${accent}cc)`, boxShadow: `0 10px 30px ${accent}66` }} aria-label="Open chat">
+          <MessageCircle size={26} strokeWidth={2.4}/>
+        </button>
+      </div>
     );
   }
 
@@ -493,8 +510,8 @@ export default function Widget({ tenant, colors, catalog, embedded = false, onCl
               <span className="absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2" style={{ background: "#48BB78", borderColor: bg }}></span>
             </div>
           ) : (
-            <div className="relative w-11 h-11 rounded-2xl flex items-center justify-center flex-shrink-0" style={{ background: `linear-gradient(135deg, ${accent}, ${accent}77)`, boxShadow: `0 4px 20px ${accent}66` }}>
-              <Sparkles size={18} className="text-[#0D1117]"/>
+            <div className="relative w-11 h-11 rounded-2xl flex items-center justify-center flex-shrink-0" style={{ background: "rgba(255,255,255,0.06)", border: `1px solid ${accent}44`, boxShadow: `0 4px 16px ${accent}22` }}>
+              <MessageCircle size={18} style={{ color: accent }} strokeWidth={2.4}/>
               <span className="absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 pulse-dot" style={{ background: "#48BB78", borderColor: bg }}></span>
             </div>
           )}
@@ -539,8 +556,8 @@ export default function Widget({ tenant, colors, catalog, embedded = false, onCl
           return (
             <div key={i} className={`flex ${isUser ? "justify-end" : "justify-start"} msg-in`}>
               {!isUser && (
-                <div className="w-7 h-7 rounded-full flex-shrink-0 mr-2 flex items-center justify-center self-end" style={isHuman ? { background: "#48BB78", boxShadow: "0 2px 8px rgba(72,187,120,0.55)" } : { background: `linear-gradient(135deg, ${accent}, ${accent}77)`, boxShadow: `0 2px 8px ${accent}44` }}>
-                  {isHuman ? <Headset size={12} className="text-[#0D1117]"/> : <Sparkles size={12} className="text-[#0D1117]"/>}
+                <div className="w-7 h-7 rounded-full flex-shrink-0 mr-2 flex items-center justify-center self-end" style={isHuman ? { background: "#48BB78", boxShadow: "0 2px 8px rgba(72,187,120,0.55)" } : { background: "rgba(255,255,255,0.06)", border: `1px solid ${accent}44` }}>
+                  {isHuman ? <Headset size={12} className="text-[#0D1117]"/> : <MessageCircle size={12} style={{ color: accent }} strokeWidth={2.4}/>}
                 </div>
               )}
               <div className={`max-w-[80%] px-4 py-2.5 text-[13.5px] leading-relaxed ${isUser ? "rounded-[18px] rounded-br-[4px]" : "rounded-[18px] rounded-bl-[4px]"}`} style={isUser ? { background: `linear-gradient(135deg, ${bubble}, ${bubble}dd)`, color: "#0D1117", boxShadow: `0 6px 20px ${bubble}33` } : isHuman ? { background: "rgba(72,187,120,0.14)", color: "#fff", border: "1px solid rgba(72,187,120,0.45)", boxShadow: "0 4px 16px rgba(72,187,120,0.15)" } : { background: "rgba(255,255,255,0.055)", color: "#fff", border: "1px solid rgba(255,255,255,0.08)", backdropFilter: "blur(8px)", boxShadow: "0 4px 16px rgba(0,0,0,0.15)" }}>
@@ -666,9 +683,6 @@ export default function Widget({ tenant, colors, catalog, embedded = false, onCl
         <button data-testid="widget-send-btn" onClick={() => sendText(input)} disabled={busy || !input.trim()} className="w-10 h-10 rounded-full font-bold flex items-center justify-center disabled:opacity-30 transition-transform hover:scale-105 disabled:hover:scale-100 flex-shrink-0" style={{ background: accent, color: "#0D1117" }}>
           {busy ? <Loader2 className="animate-spin" size={16}/> : <Send size={15}/>}
         </button>
-      </div>
-      <div className="px-3 pb-2 text-center">
-        <p className="text-[9px] uppercase tracking-widest text-white/25 font-bold">Powered by Kairo AI</p>
       </div>
     </div>
   );

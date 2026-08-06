@@ -1035,21 +1035,23 @@ async def chat_stream(req: ChatReq):
     delivery = tenant.get("delivery", {}) if tenant else {}
 
     system = (
-        f"You are a warm, natural-sounding human-like AI concierge for a {industry} business. "
+        f"You are a warm, emotionally-intelligent, human-like concierge for a {industry} business. "
+        f"You sound like a real, friendly person chatting live — never robotic, never corporate. "
         f"Business context: {instruction or 'No custom context.'} "
         f"Site title: {tenant.get('site_title','') if tenant else ''}. "
         f"Site description: {tenant.get('site_description','') if tenant else ''}. "
-        f"\n\n=== ABSOLUTE RULES (violation ruins the experience) ==="
-        f"\n1. The visitor has ALREADY been greeted by the widget interface with 'Hey — how can I help?'. NEVER greet them again. NEVER open a reply with 'Hi', 'Hello', 'Hey', 'Hey there', 'How can I help', 'How can I assist', 'How are you doing', 'Good to see you', or ANY variant. Jump STRAIGHT into the answer or clarifying question on your very first reply and every reply after."
-        f"\n2. NEVER repeat yourself. Do not restate what you just said. Do not restate the visitor's question back to them. Do not paraphrase your last message."
-        f"\n3. Remember the full conversation. Reference earlier context specifically (e.g. 'the iPhone you mentioned', 'the size 10 you asked about'). Never ask for information the visitor already gave."
-        f"\n4. Be genuinely useful. Every reply must move the conversation forward: give an answer, ask ONE precise clarifying question, or take an action. No filler acknowledgements like 'Sure thing!', 'Of course!', 'Absolutely!' on their own."
-        f"\n5. Voice-friendly length: 1-2 short sentences by default. Never more than 3 unless the visitor asks for detail. Use natural contractions (I'll, you're, that's)."
-        f"\n6. Auto-detect the visitor's language from EVERY message and ALWAYS reply in that same language."
+        f"\n\n=== HOW TO TALK (this is what makes you feel human) ==="
+        f"\n1. GREETINGS & SMALL TALK: If the visitor says hi/hey/hello, asks how you are, or makes small talk, respond like a real person would — greet them back warmly, react naturally, and it's great to ask something back like 'Hey! How's your day going?' or 'Doing great, thanks for asking — what brings you in today?'. Match their energy. NEVER reply with cold canned lines like 'Here to help you with anything', 'How can I assist you', or 'How can I help you today' on their own."
+        f"\n2. BE GENUINELY HUMAN: Use natural contractions (I'll, you're, that's), warmth, a little personality and empathy. A touch of friendly small talk before getting down to business is welcome. React to what they say ('Oh nice!', 'Totally get that') — but don't overdo filler."
+        f"\n3. DON'T REPEAT YOURSELF: Never restate what you just said or parrot the visitor's question back to them."
+        f"\n4. REMEMBER EVERYTHING: Reference earlier context specifically (e.g. 'the size 10 you mentioned'). Never re-ask for info they already gave."
+        f"\n5. MOVE IT FORWARD: Every reply should either answer, ask ONE precise question, or take an action — while still sounding warm."
+        f"\n6. LENGTH: Keep it snappy and voice-friendly — usually 1-2 short sentences, up to 3 if they ask for detail. Being brief must never make you sound cold."
+        f"\n7. LANGUAGE: Auto-detect the visitor's language from EVERY message and always reply in that same language."
         f"\n\nLANGUAGE MARKER (VERY IMPORTANT): At the very start of EVERY reply, emit EXACTLY '[[LANG:xx]]' where xx is the 2-letter ISO 639-1 code of the language you are about to reply in (en, es, fr, de, it, pt, ja, zh, ar, hi, ko, ru, nl, sv, pl, tr, etc). Do NOT emit any other text before the marker. "
         f"\n\nSPECIAL ACTIONS - VERY IMPORTANT: "
         f"When the user asks to speak with a human, agent, representative, or wants escalation, "
-        f"first give a short acknowledgement (1 sentence), then emit EXACTLY this marker on its own line: [[ACTION:escalate]] "
+        f"first give a short warm acknowledgement (1 sentence), then emit EXACTLY this marker on its own line: [[ACTION:escalate]] "
         f"When the user asks to book/schedule/reserve an appointment/slot, first confirm date+time, "
         f"then emit EXACTLY: [[ACTION:book:<slot description>]] "
         f"Only emit action markers when the user explicitly requests these; never volunteer them. "
@@ -2108,7 +2110,7 @@ async def embed_loader(tenant_id: str):
 
   // Inject minimal keyframes so the launcher pulses subtly
   var st = document.createElement('style');
-  st.textContent = '@keyframes rk-pulse{{0%,100%{{box-shadow:0 8px 32px rgba(0,0,0,.35),0 0 0 0 '+ACCENT+'66}}50%{{box-shadow:0 8px 32px rgba(0,0,0,.35),0 0 0 14px '+ACCENT+'00}}}}@keyframes rk-fade-up{{from{{opacity:0;transform:translateY(12px)}}to{{opacity:1;transform:translateY(0)}}}}';
+  st.textContent = '@keyframes rk-pulse{{0%,100%{{box-shadow:0 8px 32px rgba(0,0,0,.35),0 0 0 0 '+ACCENT+'66}}50%{{box-shadow:0 8px 32px rgba(0,0,0,.35),0 0 0 14px '+ACCENT+'00}}}}@keyframes rk-fade-up{{from{{opacity:0;transform:translateY(12px)}}to{{opacity:1;transform:translateY(0)}}}}@keyframes rk-bounce{{0%,100%{{transform:translateY(0)}}50%{{transform:translateY(6px)}}}}';
   document.head.appendChild(st);
 
   // Wrapper container so we can add the launcher + optional teaser bubble
@@ -2127,20 +2129,24 @@ async def embed_loader(tenant_id: str):
   launcher.onmouseleave = function(){{ launcher.style.transform='scale(1)'; }};
   wrap.appendChild(launcher);
 
-  // Teaser message that appears after 2s
+  // Proactive teaser: appears 30s after the visitor lands — invites them in, in any language
   var teaser = document.createElement('div');
-  teaser.style.cssText = 'position:absolute;bottom:72px;right:0;background:#fff;color:#111;padding:10px 14px;border-radius:14px;border-bottom-right-radius:4px;box-shadow:0 12px 32px rgba(0,0,0,.18);font-size:13px;font-weight:500;max-width:230px;line-height:1.35;opacity:0;transform:translateY(6px);transition:opacity .3s,transform .3s;cursor:pointer;';
-  teaser.textContent = '&#128075; Hi! Ask me anything about ' + NAME.split(' ')[0];
-  teaser.innerHTML = '&#128075; Hi! I can help &mdash; ask me anything.';
+  teaser.style.cssText = 'position:absolute;bottom:74px;right:0;background:#fff;color:#111;padding:11px 15px;border-radius:16px;border-bottom-right-radius:4px;box-shadow:0 14px 36px rgba(0,0,0,.22);font-size:13px;font-weight:600;max-width:240px;line-height:1.4;opacity:0;transform:translateY(6px);transition:opacity .35s,transform .35s;cursor:pointer;';
+  teaser.innerHTML = '<span style="font-size:15px">&#128075;</span> Talk to us here &mdash; in <b>any language</b>.';
   teaser.onclick = function(){{ launcher.click(); }};
   wrap.appendChild(teaser);
-  setTimeout(function(){{ if(!frame){{ teaser.style.opacity='1'; teaser.style.transform='translateY(0)'; }} }}, 1800);
-  setTimeout(function(){{ teaser.style.opacity='0'; teaser.style.transform='translateY(6px)'; setTimeout(function(){{try{{teaser.remove();}}catch(e){{}}}}, 400); }}, 12000);
+  // Bouncing arrow pointing from the teaser down to the message launcher
+  var arrow = document.createElement('div');
+  arrow.style.cssText = 'position:absolute;bottom:58px;right:19px;color:'+ACCENT+';opacity:0;transition:opacity .35s;pointer-events:none;animation:rk-bounce 1.2s ease-in-out infinite;';
+  arrow.innerHTML = '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12l7 7 7-7"/></svg>';
+  wrap.appendChild(arrow);
+  setTimeout(function(){{ if(!frame){{ teaser.style.opacity='1'; teaser.style.transform='translateY(0)'; arrow.style.opacity='1'; }} }}, 30000);
+  setTimeout(function(){{ teaser.style.opacity='0'; teaser.style.transform='translateY(6px)'; arrow.style.opacity='0'; setTimeout(function(){{try{{teaser.remove();arrow.remove();}}catch(e){{}}}}, 400); }}, 46000);
 
   var frame=null;
   launcher.onclick=function(){{
     if(frame){{frame.remove();frame=null;launcher.innerHTML='<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>';return;}}
-    try{{ teaser.remove(); }}catch(e){{}}
+    try{{ teaser.remove(); arrow.remove(); }}catch(e){{}}
     frame=document.createElement('iframe');
     frame.setAttribute('title','AI Concierge Chat');
     frame.setAttribute('allow','microphone; autoplay; clipboard-write');

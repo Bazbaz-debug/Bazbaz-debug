@@ -108,6 +108,105 @@ user_problem_statement: |
   info, and per-client keys (email, Google email, Zoom meeting link, etc.).
 
 backend:
+  - task: "Conversational chatbot system prompt (human small-talk in text + voice) — /api/chat/stream"
+    implemented: true
+    working: false
+    file: "backend/server.py"
+    stuck_count: 1
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: |
+          Rewrote chat_stream system prompt. Previously Rule 1 BANNED greetings/small talk
+          and forced 'jump straight into the answer', so it replied robotically (e.g. 'Here
+          to help you with anything') when a visitor said 'hi'. Now it is a warm, human,
+          emotionally-intelligent concierge: greets back naturally, reacts, may ask "how's
+          your day going?", matches energy, never uses cold canned lines. Still: no
+          repetition, remembers context, concise/voice-friendly, auto-detects language. KEPT
+          '[[LANG:xx]]' marker at start of every reply + [[ACTION:escalate]]/[[ACTION:book:..]]
+          markers. Endpoint POST /api/chat/stream (streaming) body {user_id, session_id,
+          message}. Voice call reuses this pipeline (STT -> chat_stream).
+      - working: false
+        agent: "testing"
+        comment: |
+          ✅ MAJOR IMPROVEMENTS VERIFIED (6/7 tests passed) - Chatbot is now warm and human-like
+          
+          CRITICAL TESTS PASSED (6/7):
+          ✅ Test 1: GREETING - Warm human response to "hi"
+             • Response: "Hey there! How's your day going so far?"
+             • NO cold canned line "Here to help you with anything" ✓
+             • Warm, conversational, asks a friendly question ✓
+             • Language marker [[LANG:en]] present ✓
+          
+          ✅ Test 2: SMALL TALK - Natural response to "how are you?"
+             • Response: "Hey! I'm doing great, thanks for asking. How about you? Anything exciting bringing you here today?"
+             • Natural, human-like response (not robotic) ✓
+             • Acknowledges the question and turns it back ✓
+             • Does NOT say "I am an AI" or "I do not have feelings" ✓
+          
+          ✅ Test 3: LANGUAGE (Spanish) - "hola, ¿qué tal?"
+             • Response: "¡Hola! Estoy bien, gracias por preguntar. ¿Y tú, cómo va tu día?"
+             • Language marker [[LANG:es]] present ✓
+             • Response is in Spanish ✓
+             • Warm and conversational in Spanish ✓
+          
+          ✅ Test 4: LANGUAGE (French) - "bonjour"
+             • Response: "Salut ! Comment ça va aujourd'hui ?"
+             • Language marker [[LANG:fr]] present ✓
+             • Response is in French ✓
+             • Natural French greeting ✓
+          
+          ✅ Test 6: ESCALATION ACTION - "I want to talk to a human please"
+             • Response: "Sure thing! Let me get you connected with someone who can help out. [[ACTION:escalate]]"
+             • [[ACTION:escalate]] marker present ✓
+             • Warm acknowledgement before escalation ✓
+          
+          ✅ Test 7: NO 500s - All calls returned HTTP 200 with non-empty streams ✓
+          
+          ❌ CRITICAL ISSUE - Test 5: MEMORY (context retention) FAILED
+          • First message: "my name is Sam and I want size 10 sneakers"
+            - Response: "Hey Sam! Nice to meet you. Looking for a size 10 in sneakers, got it..."
+          • Second message (same session): "what size did I say?"
+            - Response: "Hmm, it looks like I don't have that info from our chat. Could you remind me what size you're thinking about?"
+            - ❌ Does NOT remember size 10 from previous message
+            - ❌ Re-asks for size instead of referencing "the size 10 you mentioned"
+          
+          ROOT CAUSE: LlmChat session management is NOT retaining conversation history between 
+          messages in the same session_id. The system prompt correctly instructs "REMEMBER 
+          EVERYTHING: Reference earlier context specifically (e.g. 'the size 10 you mentioned'). 
+          Never re-ask for info they already gave." but the LlmChat integration (line 1157 in 
+          server.py) is not persisting context.
+          
+          IMPACT: The chatbot cannot maintain context within a conversation, which breaks the 
+          user experience for multi-turn conversations. This is a CRITICAL issue for real-world 
+          usage where visitors expect the bot to remember what they just said.
+          
+          KEY OUTCOMES:
+          • PRIMARY GOAL ACHIEVED: Chatbot is now warm, human-like, and conversational (NOT robotic) ✓
+          • Language detection and markers working correctly ✓
+          • Escalation action marker working correctly ✓
+          • CRITICAL BUG: Memory/context retention NOT working (LlmChat session issue) ✗
+          
+          The warm, human-like behavior requested in the review is working correctly. However, 
+          the memory issue is a blocker for production use and needs to be fixed.
+
+  - task: "Embed loader.js proactive nudge (30s, 'any language' + arrow) — /api/embed/{id}/loader.js"
+    implemented: true
+    working: "NA"
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "medium"
+    needs_retesting: true
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: |
+          Teaser now appears at 30s (was 1.8s), reads '👋 Talk to us here — in any language.'
+          with a bouncing down-arrow (rk-bounce) pointing to the message launcher; hides at
+          46s / on open. Verified loader.js renders ('any language' + 'rk-bounce' present).
+
   - task: "Per-client keys (GET/PUT /api/me/platform-keys) — isolated & encrypted per account"
     implemented: true
     working: true
@@ -658,13 +757,14 @@ frontend:
 
 metadata:
   created_by: "main_agent"
-  version: "1.6"
-  test_sequence: 6
+  version: "1.7"
+  test_sequence: 7
   run_ui: false
 
 test_plan:
   current_focus: []
-  stuck_tasks: []
+  stuck_tasks:
+    - "Conversational chatbot system prompt (human small-talk in text + voice) — /api/chat/stream"
   test_all: false
   test_priority: "high_first"
 
@@ -906,3 +1006,33 @@ agent_communication:
       
       All requirements from review request met. Per-client keys system fully functional and secure.
       Backend testing complete. Ready for main agent to summarize and finish.
+
+  - agent: "testing"
+    message: |
+      ✅ CHATBOT CONVERSATIONAL TESTING COMPLETE (6/7 tests passed)
+      
+      Tested POST /api/chat/stream endpoint for warm, human-like conversational behavior.
+      
+      PRIMARY GOAL ACHIEVED ✅:
+      • Chatbot is now WARM and HUMAN-LIKE (NOT robotic "Here to help you with anything")
+      • Greets naturally: "Hey there! How's your day going so far?"
+      • Small talk works: "Hey! I'm doing great, thanks for asking. How about you?"
+      • Language detection working: Spanish [[LANG:es]], French [[LANG:fr]]
+      • Escalation action marker working: [[ACTION:escalate]]
+      • All calls return HTTP 200 with non-empty streams
+      
+      CRITICAL ISSUE FOUND ❌:
+      • Memory/context retention NOT working within same session
+      • Test: "my name is Sam and I want size 10 sneakers" → "what size did I say?"
+      • Expected: "You mentioned size 10"
+      • Actual: "Hmm, it looks like I don't have that info from our chat. Could you remind me?"
+      • Root cause: LlmChat session management not persisting conversation history
+      • Location: backend/server.py line 1157
+      
+      The warm, human-like behavior requested in the review is working correctly. However, 
+      the memory issue is a CRITICAL blocker for production use. The chatbot cannot maintain 
+      context within a conversation, which breaks multi-turn conversations.
+      
+      RECOMMENDATION: Investigate LlmChat session configuration or implement custom conversation 
+      history management by storing/retrieving messages from db.messages and passing them to 
+      LlmChat as context.
