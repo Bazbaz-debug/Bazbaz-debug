@@ -135,8 +135,10 @@ See `/app/memory/test_credentials.md`
 - ✅ **Occasional emoji** — chat_stream prompt now encourages one tasteful emoji now and then on light/positive replies (never on serious topics). Verified live: "Hey! How's your day going? 😊".
 - ✅ **Emoji stripped from voice/TTS** — spoken text has emoji removed so they aren't read aloud (text + lipsync paths).
 
-## What's been implemented — 06 Aug 2026 (chatbot message color settings)
-- ✅ **Message color customization** — Settings → Branding now has a "Message colors" card with 3 pickers: Bot message text color (`bot_text_color`), Bot message bubble color (`bot_bubble_color`), Your message text color (`user_text_color`). Backend `ProfileUpdate`/tenant models + `PUT /api/me/profile` persist them; Widget.jsx applies them live to chat bubbles. Verified persistence via API + pickers render (data-testids color-bot-text / color-bot-bubble / color-user-text). Live AI chat NOT tested — LLM key budget exhausted (user chose to skip top-up).
+- ✅ **Message color customization** — Settings → Branding "Message colors" card with 3 pickers: `bot_text_color`, `bot_bubble_color`, `user_text_color`. Backend persists via `PUT /api/me/profile`; Widget applies them to chat bubbles.
+- ✅ **Fixed "colors don't change" bug** — the widget greeting was a hardcoded white hero that ignored color settings while the real colored bubble was auto-scrolled out of view. Removed the hardcoded hero (greeting is now a real color-controlled bot bubble) + fixed auto-scroll to keep the greeting visible on fresh chats.
+- ✅ **Fixed embed color bug** — `EmbedWidget.jsx` dropped the 3 new color fields; now forwards them so live embedded sites get the colors too.
+- Verified via DOM + screenshots (greeting bubble visible, reflects bot bubble/text colors). Live AI chat NOT tested — LLM key budget exhausted (user skipped top-up).
 
 ## What's been implemented — 06 Aug 2026 (faster + smarter chat + voice greeting)
 - ✅ **Faster replies** — reverted the slow buffer-then-typewriter; widget now LIVE-streams tokens (throttled ~40ms) so text appears instantly and still reads like natural typing. Fixed the "hi is delayed" issue.

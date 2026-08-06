@@ -54,6 +54,9 @@ export default function EmbedWidget() {
     widget_bg: tenant.widget_bg,
     bubble_color: tenant.bubble_color,
     accent_color: tenant.accent_color,
+    user_text_color: tenant.user_text_color,
+    bot_bubble_color: tenant.bot_bubble_color,
+    bot_text_color: tenant.bot_text_color,
   };
 
   return (

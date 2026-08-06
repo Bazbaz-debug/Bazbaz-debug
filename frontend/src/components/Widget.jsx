@@ -49,7 +49,7 @@ export default function Widget({ tenant, colors, catalog, embedded = false, onCl
 
   const [open, setOpen] = useState(true);
   const [messages, setMessages] = useState([
-    { role: "assistant", text: tenant?.bot_greeting || "Hey — how can I help?" },
+    { role: "assistant", text: tenant?.bot_greeting || "Hi there! 👋 How can I help you today?" },
   ]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
@@ -140,6 +140,12 @@ export default function Widget({ tenant, colors, catalog, embedded = false, onCl
   }, []);
 
   useEffect(() => {
+    // On a fresh conversation keep the greeting bubble in view (don't jump to the
+    // catalog/quick-replies at the bottom); scroll to latest only once chatting starts.
+    if (messages.length <= 1 && !busy) {
+      scrollRef.current?.scrollTo({ top: 0 });
+      return;
+    }
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
   }, [messages, busy]);
 
@@ -547,17 +553,13 @@ export default function Widget({ tenant, colors, catalog, embedded = false, onCl
             <X size={16}/>
           </button>
         </div>
-        {/* Hero greeting line - only when it's a fresh conversation */}
+        {/* Fresh-conversation CTA (greeting text now lives in the colored bot bubble below) */}
         {messages.length <= 1 && (
           <div className="relative mt-4">
-            <p className="text-white text-xl font-black leading-tight tracking-tight" data-testid="widget-hero-greeting">
-              Hi there! &#128075;
-            </p>
-            <p className="text-white/70 text-sm mt-1 leading-snug">How can we help you today?</p>
             <button
               data-testid="widget-startcall-hero"
               onClick={startCall}
-              className="mt-3 inline-flex items-center gap-2 text-[11px] font-bold uppercase tracking-widest px-3 py-2 rounded-full transition-all hover:scale-[1.02] hover:brightness-110"
+              className="inline-flex items-center gap-2 text-[11px] font-bold uppercase tracking-widest px-3 py-2 rounded-full transition-all hover:scale-[1.02] hover:brightness-110"
               style={{ background: accent, color: "#0D1117", boxShadow: `0 6px 20px ${accent}55` }}
             >
               <PhoneCall size={12}/> Start Live Voice Call
