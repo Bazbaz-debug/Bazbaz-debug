@@ -1,9 +1,13 @@
 import { useNavigate } from "react-router-dom";
+import { useState, useEffect, useCallback } from "react";
+import { toast } from "sonner";
+import api from "../lib/api";
 import { Button } from "../components/ui/button";
 import { KairoLogo, KairoMark } from "../components/KairoLogo";
 import {
   ArrowRight, ArrowUpRight, MessageSquare, ShoppingBag, TrendingUp, Sparkles,
-  Languages, Inbox, PhoneCall, UserCheck, Package, Camera, Star, Lock, Zap
+  Languages, Inbox, PhoneCall, UserCheck, Package, Camera, Star, Lock, Zap,
+  CalendarDays, Clock, Check, Loader2, Mail, ArrowLeft
 } from "lucide-react";
 
 // Baazi's Upwork profile — update this link to the real profile URL when available.
@@ -21,6 +25,165 @@ const FEATURES = [
   { icon: PhoneCall, title: "Voice concierge", desc: "Visitors can talk to Kairo out loud — hands-free support." },
   { icon: UserCheck, title: "Human handoff", desc: "Jump in live anytime; Kairo hands the thread straight to you." },
 ];
+
+function WaitlistCapture() {
+  const [email, setEmail] = useState("");
+  const [name, setName] = useState("");
+  const [state, setState] = useState("idle"); // idle | loading | done
+  const [msg, setMsg] = useState("");
+  const submit = async (e) => {
+    e.preventDefault();
+    if (!email.trim()) { toast.error("Enter your email"); return; }
+    setState("loading");
+    try {
+      const { data } = await api.post("/waitlist", { email: email.trim(), name: name.trim(), source: "landing" });
+      setMsg(data.message || "You're on the list!");
+      setState("done");
+    } catch (err) {
+      const detail = err?.response?.data?.detail;
+      toast.error(typeof detail === "string" ? detail : "Please enter a valid email");
+      setState("idle");
+    }
+  };
+  if (state === "done") {
+    return (
+      <div data-testid="waitlist-success" className="flex flex-col items-center text-center gap-3 py-6">
+        <div className="w-12 h-12 rounded-full bg-[#48BB78]/15 border border-[#48BB78]/40 flex items-center justify-center"><Check className="text-[#48BB78]" size={22} /></div>
+        <p className="font-display font-bold text-lg">You're on the launch list.</p>
+        <p className="text-white/55 text-sm max-w-xs">{msg}</p>
+      </div>
+    );
+  }
+  return (
+    <form onSubmit={submit} data-testid="waitlist-form" className="flex flex-col gap-3">
+      <div className="flex items-center gap-2 text-[#48BB78] mb-1"><Mail size={16} /><span className="text-[11px] uppercase tracking-[0.25em] font-bold">Join the launch list</span></div>
+      <p className="text-white/55 text-sm mb-1">Leave your email and we'll tell you the moment Kairo opens to the public.</p>
+      <input data-testid="waitlist-name" value={name} onChange={e => setName(e.target.value)} placeholder="Your name (optional)" className="w-full rounded-xl bg-[#0B1016] border border-white/10 px-4 py-3 text-sm text-white placeholder:text-white/30 focus:border-[#48BB78]/60 outline-none" />
+      <input data-testid="waitlist-email" type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="you@company.com" className="w-full rounded-xl bg-[#0B1016] border border-white/10 px-4 py-3 text-sm text-white placeholder:text-white/30 focus:border-[#48BB78]/60 outline-none" />
+      <button data-testid="waitlist-submit" type="submit" disabled={state === "loading"} className="btn-luxe text-sm flex items-center justify-center gap-2 !py-3">
+        {state === "loading" ? <><Loader2 size={16} className="animate-spin" /> Adding you…</> : <>Join the list <ArrowRight size={15} /></>}
+      </button>
+    </form>
+  );
+}
+
+function BookingCalendar({ onReserved }) {
+  const [slots, setSlots] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [activeDay, setActiveDay] = useState(null);
+  const [picked, setPicked] = useState(null);
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [state, setState] = useState("idle"); // idle | loading | done
+  const [bookingUrl, setBookingUrl] = useState("https://www.upwork.com/");
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const { data } = await api.get("/public/kairo-availability?days=10");
+      setSlots(data.slots || []);
+    } catch { setSlots([]); }
+    finally { setLoading(false); }
+  }, []);
+  useEffect(() => { load(); }, [load]);
+
+  // Group slots by calendar day
+  const byDay = {};
+  slots.forEach(s => {
+    const day = s.start_iso.slice(0, 10);
+    (byDay[day] = byDay[day] || []).push(s);
+  });
+  const days = Object.keys(byDay).sort();
+  useEffect(() => { if (!activeDay && days.length) setActiveDay(days[0]); }, [days, activeDay]);
+
+  const fmtDay = (d) => {
+    const dt = new Date(d + "T00:00:00Z");
+    return { dow: dt.toLocaleDateString("en-US", { weekday: "short", timeZone: "UTC" }), day: dt.getUTCDate(), mon: dt.toLocaleDateString("en-US", { month: "short", timeZone: "UTC" }) };
+  };
+  const fmtTime = (iso) => new Date(iso).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", timeZone: "UTC" }) + " UTC";
+
+  const reserve = async () => {
+    if (!email.trim()) { toast.error("Enter your email to reserve"); return; }
+    if (!picked) { toast.error("Pick a time slot first"); return; }
+    setState("loading");
+    try {
+      const { data } = await api.post("/public/reserve", {
+        name: name.trim(), email: email.trim(),
+        slot_iso: picked.start_iso, slot_label: picked.label,
+      });
+      setBookingUrl(data.booking_url || "https://www.upwork.com/");
+      setState("done");
+      onReserved?.();
+    } catch (err) {
+      const detail = err?.response?.data?.detail;
+      toast.error(typeof detail === "string" ? detail : "Could not reserve — check your email");
+      setState("idle");
+    }
+  };
+
+  if (state === "done") {
+    return (
+      <div data-testid="booking-success" className="flex flex-col items-center text-center gap-4 py-4">
+        <div className="w-12 h-12 rounded-full bg-[#48BB78]/15 border border-[#48BB78]/40 flex items-center justify-center"><Check className="text-[#48BB78]" size={22} /></div>
+        <p className="font-display font-bold text-lg">Slot reserved</p>
+        <p className="text-white/60 text-sm">We noted <span className="text-white font-semibold">{picked?.label}</span>. Finish booking with Baazi on Upwork to lock it in.</p>
+        <a data-testid="booking-continue-upwork" href={bookingUrl} target="_blank" rel="noopener noreferrer" className="btn-luxe text-sm flex items-center gap-2 !px-8 !py-3">
+          Continue to Upwork <ArrowUpRight size={16} />
+        </a>
+      </div>
+    );
+  }
+
+  return (
+    <div data-testid="booking-calendar" className="flex flex-col gap-4">
+      <div className="flex items-center gap-2 text-[#48BB78]"><CalendarDays size={16} /><span className="text-[11px] uppercase tracking-[0.25em] font-bold">Pick a slot</span></div>
+      <p className="text-white/55 text-sm">Choose a time that suits you — then hop over to Upwork to confirm.</p>
+      {loading ? (
+        <div className="flex items-center gap-2 text-white/50 text-sm py-6"><Loader2 size={16} className="animate-spin" /> Loading availability…</div>
+      ) : days.length === 0 ? (
+        <p className="text-white/50 text-sm py-6">No open slots right now — please book directly on Upwork.</p>
+      ) : (
+        <>
+          {/* Day chips */}
+          <div className="flex gap-2 overflow-x-auto pb-1" data-testid="booking-days">
+            {days.slice(0, 8).map(d => {
+              const f = fmtDay(d);
+              const on = activeDay === d;
+              return (
+                <button key={d} data-testid={`booking-day-${d}`} onClick={() => { setActiveDay(d); setPicked(null); }}
+                  className={`flex-shrink-0 w-16 rounded-xl border px-2 py-2 text-center transition-colors ${on ? "border-[#48BB78] bg-[#48BB78]/15" : "border-white/10 bg-[#0B1016] hover:border-white/25"}`}>
+                  <div className="text-[10px] uppercase tracking-wider text-white/45">{f.dow}</div>
+                  <div className="font-display font-black text-lg leading-tight">{f.day}</div>
+                  <div className="text-[10px] text-white/40">{f.mon}</div>
+                </button>
+              );
+            })}
+          </div>
+          {/* Time slots */}
+          <div className="grid grid-cols-3 gap-2" data-testid="booking-slots">
+            {(byDay[activeDay] || []).slice(0, 9).map(s => {
+              const on = picked?.start_iso === s.start_iso;
+              return (
+                <button key={s.start_iso} data-testid={`booking-slot-${s.start_iso}`} onClick={() => setPicked(s)}
+                  className={`rounded-lg border px-2 py-2 text-xs font-semibold transition-colors flex items-center justify-center gap-1 ${on ? "border-[#48BB78] bg-[#48BB78]/20 text-white" : "border-white/10 bg-[#0B1016] text-white/70 hover:border-white/30"}`}>
+                  <Clock size={11} /> {fmtTime(s.start_iso)}
+                </button>
+              );
+            })}
+          </div>
+          {/* Contact + reserve */}
+          <div className="flex flex-col gap-2 pt-1">
+            <input data-testid="booking-name" value={name} onChange={e => setName(e.target.value)} placeholder="Your name" className="w-full rounded-xl bg-[#0B1016] border border-white/10 px-4 py-2.5 text-sm text-white placeholder:text-white/30 focus:border-[#48BB78]/60 outline-none" />
+            <input data-testid="booking-email" type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="you@company.com" className="w-full rounded-xl bg-[#0B1016] border border-white/10 px-4 py-2.5 text-sm text-white placeholder:text-white/30 focus:border-[#48BB78]/60 outline-none" />
+            <button data-testid="booking-reserve-btn" onClick={reserve} disabled={state === "loading" || !picked} className="btn-luxe text-sm flex items-center justify-center gap-2 !py-3 disabled:opacity-50">
+              {state === "loading" ? <><Loader2 size={16} className="animate-spin" /> Reserving…</> : <>Reserve {picked ? `· ${fmtTime(picked.start_iso)}` : "a slot"} <ArrowRight size={15} /></>}
+            </button>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
 
 export default function LandingPage() {
   const nav = useNavigate();
@@ -148,8 +311,19 @@ export default function LandingPage() {
               It's not open yet.<br />Reserve your spot.
             </h2>
             <p className="text-white/60 text-base md:text-lg leading-relaxed mb-10">
-              Kairo is offered exclusively to <span className="text-white font-semibold">Upwork clients</span> and is currently in private demo. Book a consultation with <span className="text-white font-semibold">Baazi Suufi</span> on Upwork to claim your place — and be first in line the moment it launches.
+              Kairo is offered exclusively to <span className="text-white font-semibold">Upwork clients</span> and is currently in private demo. Join the launch list, pick a slot below, then book a consultation with <span className="text-white font-semibold">Baazi Suufi</span> on Upwork to claim your place.
             </p>
+
+            {/* Waitlist + Booking cards */}
+            <div className="grid md:grid-cols-2 gap-5 w-full text-left mb-10">
+              <div className="glass rounded-2xl p-6 border border-white/10" data-testid="waitlist-card">
+                <WaitlistCapture />
+              </div>
+              <div className="glass rounded-2xl p-6 border border-white/10" data-testid="booking-card">
+                <BookingCalendar />
+              </div>
+            </div>
+
             <button data-testid="reserve-upwork-btn" onClick={openUpwork} className="btn-luxe text-sm md:text-base flex items-center gap-2.5 !px-10 !py-4">
               Book on Upwork to wait <ArrowUpRight size={18} />
             </button>

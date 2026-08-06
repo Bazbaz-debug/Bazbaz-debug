@@ -293,6 +293,55 @@ frontend:
           endpoint. Save button dispatches PUT /api/admin/users/{id} with only
           changed fields (via non-null filter server-side).
 
+  - task: "Landing: Waitlist capture + mini booking calendar"
+    implemented: true
+    working: "NA"
+    file: "frontend/src/pages/Landing.jsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: |
+          Reservation block now has WaitlistCapture (name+email -> POST /api/waitlist,
+          success state) and BookingCalendar (GET /api/public/kairo-availability, day
+          chips + time slots, name+email -> POST /api/public/reserve -> success + Continue
+          to Upwork with returned booking_url). Visually verified: form + calendar render,
+          4 day chips + 9 slots loaded.
+
+  - task: "Admin: centralized Platform Keys UI + Waitlist tab + Reservations tab"
+    implemented: true
+    working: "NA"
+    file: "frontend/src/pages/Admin.jsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: |
+          PlatformKeysCard rewritten to render all categories from GET /admin/platform-keys
+          (email/calendar/messaging/voice/chat), masked secret badges, PUT {values}. New
+          Waitlist tab (list + CSV export + delete) and Reservations tab. Visually verified:
+          5 categories render with saved values, tabs present.
+
+  - task: "Dashboard Training: Answer Suggestions (scan weak replies)"
+    implemented: true
+    working: "NA"
+    file: "frontend/src/pages/Dashboard.jsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: |
+          TrainingCenter now has an Answer Suggestions card: "Scan for weak replies" calls
+          GET /me/training/suggestions, lists editable suggestions with Approve (POST
+          /me/training/correct). Visually verified on demo client: scan returns empty-state
+          message (no messages yet), no crash.
+
   - task: "Centralized Platform Keys (GET/PUT /api/admin/platform-keys)"
     implemented: true
     working: true

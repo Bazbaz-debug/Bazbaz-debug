@@ -90,3 +90,12 @@ Phase 2 (SaaS backend):
 
 ## Test credentials
 See `/app/memory/test_credentials.md`
+
+## What's been implemented — 06 Aug 2026 (env recovery + 4 features)
+- ⚠️ **Env recovery** — after a fresh GitHub re-import both `backend/.env` and `frontend/.env` were MISSING and Mongo was empty. Recreated both (new JWT_SECRET + FERNET_KEY, MONGO_URL, DB_NAME=kairo, EMERGENT_LLM_KEY, ADMIN baazisufi23@gmail.com / Kairo@Admin2025). App restored & healthy.
+- ✅ **Live Resend wiring (demo mode)** — send_email already prefers admin-configured Resend key; kept. Key not set → stays in demo mode until a real `re_...` key is saved in Admin → System → Platform Keys.
+- ✅ **Centralized Platform Keys** — GET/PUT /api/admin/platform-keys rewritten to a generic multi-category store (email / calendar / messaging / voice / chat); secrets Fernet-encrypted + masked, plain values editable. New Admin UI renders all categories.
+- ✅ **Waitlist capture** — POST /api/waitlist (public, dedupe), GET/DELETE /api/admin/waitlist. Landing has a Join-the-launch-list form; Admin has a Waitlist tab (list + CSV export + delete).
+- ✅ **Answer Suggestions** — GET /api/me/training/suggestions scores weak replies + LLM (gpt-4o) drafts improved answers; Training tab "Scan for weak replies" → one-click Approve (creates a correction).
+- ✅ **Booking calendar** — GET /api/public/kairo-availability + POST /api/public/reserve + GET /api/admin/reservations. Landing reservation block has a mini day/slot calendar → reserve → Continue to Upwork (booking_url from platform calendar key); Admin has a Reservations tab.
+- ✅ Backend tested: 18/18 pass. Frontend visually verified (landing, admin keys, training). Automated frontend test pending user approval.

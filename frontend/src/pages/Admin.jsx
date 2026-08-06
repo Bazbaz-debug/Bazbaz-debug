@@ -4,7 +4,7 @@ import { KairoMark } from "@/components/KairoLogo";
 import { toast } from "sonner";
 import api from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
-import { Shield, UserPlus, KeyRound, PowerOff, Power, Files, LogOut, Edit3, Save, Bot, Activity, MessagesSquare, CalendarCheck, Mic, PhoneCall, Users, Video, FileText, TrendingUp, CheckCircle2, XCircle, Settings, BarChart3, Upload, Sliders, Globe, Mail, Video as VideoIcon, Phone, Eye, ScrollText, Search } from "lucide-react";
+import { Shield, UserPlus, KeyRound, PowerOff, Power, Files, LogOut, Edit3, Save, Bot, Activity, MessagesSquare, CalendarCheck, Mic, PhoneCall, Users, Video, FileText, TrendingUp, CheckCircle2, XCircle, Settings, BarChart3, Upload, Sliders, Globe, Mail, Video as VideoIcon, Phone, Eye, ScrollText, Search, Sparkles, Trash2, Clock, Inbox, ClipboardList } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -172,6 +172,8 @@ export default function Admin() {
             <TabsTrigger data-testid="admin-tab-clients" value="clients" className="data-[state=active]:bg-[#1A202C] data-[state=active]:text-[#48BB78] data-[state=active]:shadow-none text-[#A0AEC0]"><Users size={14} className="mr-1.5"/>Clients</TabsTrigger>
             <TabsTrigger data-testid="admin-tab-activity" value="activity" className="data-[state=active]:bg-[#1A202C] data-[state=active]:text-[#48BB78] data-[state=active]:shadow-none text-[#A0AEC0]"><Activity size={14} className="mr-1.5"/>Activity</TabsTrigger>
             <TabsTrigger data-testid="admin-tab-audit" value="audit" className="data-[state=active]:bg-[#1A202C] data-[state=active]:text-[#48BB78] data-[state=active]:shadow-none text-[#A0AEC0]"><ScrollText size={14} className="mr-1.5"/>Audit</TabsTrigger>
+            <TabsTrigger data-testid="admin-tab-waitlist" value="waitlist" className="data-[state=active]:bg-[#1A202C] data-[state=active]:text-[#48BB78] data-[state=active]:shadow-none text-[#A0AEC0]"><Inbox size={14} className="mr-1.5"/>Waitlist</TabsTrigger>
+            <TabsTrigger data-testid="admin-tab-reservations" value="reservations" className="data-[state=active]:bg-[#1A202C] data-[state=active]:text-[#48BB78] data-[state=active]:shadow-none text-[#A0AEC0]"><ClipboardList size={14} className="mr-1.5"/>Reservations</TabsTrigger>
             <TabsTrigger data-testid="admin-tab-settings" value="settings" className="data-[state=active]:bg-[#1A202C] data-[state=active]:text-[#48BB78] data-[state=active]:shadow-none text-[#A0AEC0]"><Settings size={14} className="mr-1.5"/>System</TabsTrigger>
           </TabsList>
 
@@ -365,6 +367,14 @@ export default function Admin() {
           </TabsContent>
 
           {/* SYSTEM */}
+          <TabsContent value="waitlist" className="space-y-6">
+            <WaitlistTab />
+          </TabsContent>
+
+          <TabsContent value="reservations" className="space-y-6">
+            <ReservationsTab />
+          </TabsContent>
+
           <TabsContent value="settings" className="space-y-6">
             <PlatformKeysCard onSaved={load} />
             <div className="bg-[#2D3748] rounded-md p-6 border border-white/5">
@@ -593,50 +603,172 @@ function Stat({ icon, label, v }) {
   );
 }
 
+const CAT_ICONS = { mail: Mail, calendar: CalendarCheck, "message-square": MessagesSquare, phone: Phone, sparkles: Sparkles };
+
 function PlatformKeysCard({ onSaved }) {
-  const [info, setInfo] = useState({ resend_configured: false, resend_masked: "", sender_email: "" });
-  const [resendKey, setResendKey] = useState("");
-  const [sender, setSender] = useState("");
+  const [categories, setCategories] = useState([]);
+  const [form, setForm] = useState({});          // fieldKey -> input value
+  const [configured, setConfigured] = useState({}); // fieldKey -> bool
   const [saving, setSaving] = useState(false);
-  useEffect(() => {
-    api.get("/admin/platform-keys").then(r => { setInfo(r.data); setSender(r.data.sender_email || ""); }).catch(() => {});
+  const hydrate = useCallback(async () => {
+    try {
+      const r = await api.get("/admin/platform-keys");
+      const cats = r.data.categories || [];
+      setCategories(cats);
+      const f = {}; const c = {};
+      cats.forEach(cat => cat.fields.forEach(fl => {
+        // plain fields prefilled with actual value; secrets start empty (masked shown as placeholder)
+        f[fl.key] = fl.secret ? "" : (fl.value || "");
+        c[fl.key] = fl.configured;
+      }));
+      setForm(f); setConfigured(c);
+    } catch { /* ignore */ }
   }, []);
+  useEffect(() => { hydrate(); }, [hydrate]);
+
   const save = async () => {
     setSaving(true);
     try {
-      const body = { sender_email: sender };
-      if (resendKey.trim()) body.resend_api_key = resendKey.trim();
-      await api.put("/admin/platform-keys", body);
-      toast.success("Platform email keys saved — emails now send live");
-      setResendKey("");
-      const r = await api.get("/admin/platform-keys"); setInfo(r.data);
+      const values = {};
+      categories.forEach(cat => cat.fields.forEach(fl => {
+        const v = (form[fl.key] ?? "").trim();
+        if (fl.secret) { if (v) values[fl.key] = v; }   // only send secrets when typed
+        else { values[fl.key] = v; }                     // always send plain (allows clearing)
+      }));
+      await api.put("/admin/platform-keys", { values });
+      toast.success("Platform keys saved");
+      await hydrate();
       onSaved && onSaved();
     } catch { toast.error("Could not save keys"); }
     finally { setSaving(false); }
   };
+
   return (
     <div className="bg-[#2D3748] rounded-md p-6 border border-white/5" data-testid="platform-keys-card">
       <div className="flex items-center justify-between mb-1">
-        <h3 className="font-display font-bold text-lg flex items-center gap-2"><Mail size={16} className="text-[#48BB78]"/> Email Delivery (Resend)</h3>
-        {info.resend_configured
-          ? <span data-testid="resend-connected-badge" className="inline-flex items-center gap-1 text-[10px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full bg-[#48BB78] text-[#0D1117]"><CheckCircle2 size={10} strokeWidth={3}/> Connected {info.resend_masked}</span>
-          : <span className="text-[10px] uppercase tracking-widest font-bold text-[#ED8936]">Demo mode · not sending</span>}
+        <h3 className="font-display font-bold text-lg flex items-center gap-2"><KeyRound size={16} className="text-[#48BB78]"/> Platform Keys</h3>
       </div>
-      <p className="text-sm text-[#A0AEC0] mb-4">Add your Resend API key to turn on live signup & booking emails. The key is encrypted before it's stored.</p>
-      <div className="grid md:grid-cols-2 gap-3">
-        <div>
-          <label className="text-xs text-[#A0AEC0] font-bold uppercase tracking-widest">Resend API Key</label>
-          <Input data-testid="resend-key-input" type="password" value={resendKey} onChange={e => setResendKey(e.target.value)} placeholder={info.resend_configured ? "Enter a new key to replace" : "re_..."} className="bg-[#1A202C] border-white/10 text-white h-10 mt-1 font-mono text-xs"/>
-        </div>
-        <div>
-          <label className="text-xs text-[#A0AEC0] font-bold uppercase tracking-widest">Sender Email</label>
-          <Input data-testid="resend-sender-input" value={sender} onChange={e => setSender(e.target.value)} placeholder="hello@yourdomain.com" className="bg-[#1A202C] border-white/10 text-white h-10 mt-1 text-sm"/>
-        </div>
+      <p className="text-sm text-[#A0AEC0] mb-5">All your integration keys in one place — email, calendar, messaging, voice & chat. Secrets are encrypted before storage and shown masked. Leave a secret blank to keep the current value.</p>
+      <div className="space-y-6">
+        {categories.map(cat => {
+          const Icon = CAT_ICONS[cat.icon] || KeyRound;
+          return (
+            <div key={cat.category} data-testid={`pk-cat-${cat.category}`}>
+              <div className="flex items-center gap-2 mb-3 pb-2 border-b border-white/5">
+                <Icon size={15} className="text-[#48BB78]"/>
+                <h4 className="font-display font-bold text-sm text-white">{cat.label}</h4>
+              </div>
+              <div className="grid md:grid-cols-2 gap-3">
+                {cat.fields.map(fl => (
+                  <div key={fl.key}>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="text-[11px] text-[#A0AEC0] font-bold uppercase tracking-widest">{fl.label}</label>
+                      {fl.secret && configured[fl.key] && (
+                        <span data-testid={`pk-configured-${fl.key}`} className="inline-flex items-center gap-1 text-[9px] font-black uppercase tracking-widest px-1.5 py-0.5 rounded-full bg-[#48BB78] text-[#0D1117]"><CheckCircle2 size={9} strokeWidth={3}/> {fl.value || "Set"}</span>
+                      )}
+                    </div>
+                    <Input
+                      data-testid={`pk-input-${fl.key}`}
+                      type={fl.secret ? "password" : "text"}
+                      value={form[fl.key] ?? ""}
+                      onChange={e => setForm(s => ({ ...s, [fl.key]: e.target.value }))}
+                      placeholder={fl.secret && configured[fl.key] ? "•••• enter new to replace" : fl.placeholder}
+                      className={`bg-[#1A202C] border-white/10 text-white h-10 mt-0.5 text-sm ${fl.secret ? "font-mono text-xs" : ""}`}
+                    />
+                  </div>
+                ))}
+              </div>
+            </div>
+          );
+        })}
       </div>
-      <Button data-testid="platform-keys-save" onClick={save} disabled={saving} className="mt-4 bg-[#48BB78] hover:bg-[#38A169] text-[#1A202C] hover:text-white font-bold rounded-md">
-        {saving ? "Saving…" : "Save & go live"}
+      <Button data-testid="platform-keys-save" onClick={save} disabled={saving} className="mt-6 bg-[#48BB78] hover:bg-[#38A169] text-[#1A202C] hover:text-white font-bold rounded-md">
+        {saving ? "Saving…" : "Save all keys"}
       </Button>
-      <p className="text-[11px] text-[#A0AEC0] mt-3">Get a free key at <a href="https://resend.com/api-keys" target="_blank" rel="noreferrer" className="text-[#48BB78] link-underline">resend.com/api-keys</a> — verify your sending domain first.</p>
+      <p className="text-[11px] text-[#A0AEC0] mt-3">Get a free Resend key at <a href="https://resend.com/api-keys" target="_blank" rel="noreferrer" className="text-[#48BB78] link-underline">resend.com/api-keys</a>. Once the Resend key + verified sender are saved, signup & booking emails send live.</p>
+    </div>
+  );
+}
+
+function WaitlistTab() {
+  const [entries, setEntries] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const load = useCallback(async () => {
+    setLoading(true);
+    try { const r = await api.get("/admin/waitlist"); setEntries(r.data.entries || []); }
+    catch { setEntries([]); }
+    finally { setLoading(false); }
+  }, []);
+  useEffect(() => { load(); }, [load]);
+  const remove = async (id) => { try { await api.delete(`/admin/waitlist/${id}`); toast.success("Removed"); await load(); } catch { toast.error("Could not remove"); } };
+  const exportCsv = () => {
+    const rows = [["email", "name", "source", "created_at"], ...entries.map(e => [e.email, e.name, e.source, e.created_at])];
+    const csv = rows.map(r => r.map(c => `"${(c || "").toString().replace(/"/g, '""')}"`).join(",")).join("\n");
+    const url = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
+    const a = document.createElement("a"); a.href = url; a.download = "kairo-waitlist.csv"; a.click(); URL.revokeObjectURL(url);
+  };
+  return (
+    <div className="bg-[#2D3748] rounded-md p-6 border border-white/5" data-testid="waitlist-tab">
+      <div className="flex items-center justify-between mb-4">
+        <div>
+          <h3 className="font-display font-bold text-lg flex items-center gap-2"><Inbox size={16} className="text-[#48BB78]"/> Launch Waitlist</h3>
+          <p className="text-sm text-[#A0AEC0]">Emails captured from the landing page.</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="text-2xl font-display font-black" data-testid="waitlist-count">{entries.length}</span>
+          <Button data-testid="waitlist-export" onClick={exportCsv} disabled={!entries.length} size="sm" variant="outline" className="border-white/15 text-white/80 rounded-md">Export CSV</Button>
+        </div>
+      </div>
+      {loading ? <p className="text-sm text-[#A0AEC0]">Loading…</p> : entries.length === 0 ? (
+        <p className="text-sm text-[#A0AEC0]">No signups yet. Visitors who join from the landing page appear here.</p>
+      ) : (
+        <ul className="space-y-2" data-testid="waitlist-list">
+          {entries.map(e => (
+            <li key={e.id} className="flex items-center justify-between gap-3 bg-[#1A202C] border border-white/5 rounded-lg px-3 py-2">
+              <div className="min-w-0">
+                <p className="text-sm text-white truncate">{e.email}{e.name ? <span className="text-white/40"> · {e.name}</span> : null}</p>
+                <p className="text-[11px] text-white/35">{e.source} · {new Date(e.created_at).toLocaleString()}</p>
+              </div>
+              <button data-testid={`waitlist-remove-${e.id}`} onClick={() => remove(e.id)} className="text-red-400 hover:text-red-300 flex-shrink-0"><Trash2 size={14}/></button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+function ReservationsTab() {
+  const [items, setItems] = useState([]);
+  const [loading, setLoading] = useState(true);
+  useEffect(() => {
+    api.get("/admin/reservations").then(r => setItems(r.data.reservations || [])).catch(() => setItems([])).finally(() => setLoading(false));
+  }, []);
+  return (
+    <div className="bg-[#2D3748] rounded-md p-6 border border-white/5" data-testid="reservations-tab">
+      <div className="flex items-center justify-between mb-4">
+        <div>
+          <h3 className="font-display font-bold text-lg flex items-center gap-2"><Clock size={16} className="text-[#48BB78]"/> Slot Reservations</h3>
+          <p className="text-sm text-[#A0AEC0]">Time slots visitors picked on the landing calendar before heading to Upwork.</p>
+        </div>
+        <span className="text-2xl font-display font-black" data-testid="reservations-count">{items.length}</span>
+      </div>
+      {loading ? <p className="text-sm text-[#A0AEC0]">Loading…</p> : items.length === 0 ? (
+        <p className="text-sm text-[#A0AEC0]">No reservations yet.</p>
+      ) : (
+        <ul className="space-y-2" data-testid="reservations-list">
+          {items.map(r => (
+            <li key={r.id} className="bg-[#1A202C] border border-white/5 rounded-lg px-3 py-2">
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-sm text-white truncate">{r.email}{r.name ? <span className="text-white/40"> · {r.name}</span> : null}</p>
+                <span className="text-[10px] uppercase tracking-widest font-bold text-[#48BB78] flex-shrink-0">{r.status}</span>
+              </div>
+              <p className="text-[12px] text-white/60 mt-0.5">{r.slot_label || r.slot_iso}</p>
+              <p className="text-[11px] text-white/30">{new Date(r.created_at).toLocaleString()}</p>
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }

@@ -621,6 +621,38 @@ function TrainingCenter() {
   const [analytics, setAnalytics] = useState({ total_corrections: 0, total_uses: 0, ranked: [] });
   const [edits, setEdits] = useState({});
   const [savingId, setSavingId] = useState(null);
+  const [suggestions, setSuggestions] = useState([]);
+  const [sugEdits, setSugEdits] = useState({});
+  const [scanning, setScanning] = useState(false);
+  const [scanMsg, setScanMsg] = useState("");
+  const [scanned, setScanned] = useState(false);
+  const [applyingId, setApplyingId] = useState(null);
+  const scanSuggestions = async () => {
+    setScanning(true); setScanMsg(""); setScanned(false);
+    try {
+      const { data } = await api.get("/me/training/suggestions");
+      const list = data.suggestions || [];
+      setSuggestions(list);
+      const seed = {};
+      list.forEach(s => { seed[s.message_id] = s.suggested; });
+      setSugEdits(seed);
+      setScanMsg(data.message || (list.length ? "" : "No weak replies found — your AI is answering confidently."));
+      setScanned(true);
+    } catch { toast.error("Could not scan for weak replies"); }
+    finally { setScanning(false); }
+  };
+  const applySuggestion = async (s) => {
+    const corrected = (sugEdits[s.message_id] ?? s.suggested ?? "").trim();
+    if (!corrected) { toast.error("Suggestion is empty"); return; }
+    setApplyingId(s.message_id);
+    try {
+      await api.post("/me/training/correct", { message_id: s.message_id, session_id: s.session_id, question: s.question, original: s.original, corrected });
+      toast.success("Suggestion approved — the AI will use this answer going forward");
+      setSuggestions(list => list.filter(x => x.message_id !== s.message_id));
+      await load();
+    } catch { toast.error("Could not approve suggestion"); }
+    finally { setApplyingId(null); }
+  };
   const load = useCallback(async () => {
     try {
       const [t, c, a] = await Promise.all([
@@ -649,6 +681,41 @@ function TrainingCenter() {
   const removeCorrection = async (id) => { await api.delete(`/me/training/corrections/${id}`); toast.success("Correction removed"); await load(); };
   return (
     <div className="space-y-6" data-testid="training-center">
+      <Card title="Answer suggestions" subtitle="Let Kairo find its weakest replies and suggest a better answer you can approve in one click.">
+        <div className="flex items-center gap-3 mb-4">
+          <Button data-testid="scan-suggestions-btn" onClick={scanSuggestions} disabled={scanning} size="sm" className="bg-[#48BB78] hover:bg-[#38A169] text-[#1A202C] hover:text-white font-bold rounded-md">
+            {scanning ? <Loader2 size={14} className="mr-1.5 animate-spin"/> : <Sparkles size={14} className="mr-1.5"/>}
+            {scanning ? "Scanning replies…" : "Scan for weak replies"}
+          </Button>
+          {scanned && suggestions.length > 0 && (
+            <span className="text-xs text-white/50">{suggestions.length} weak {suggestions.length === 1 ? "reply" : "replies"} found</span>
+          )}
+        </div>
+        {scanning && (
+          <p className="text-sm text-white/50">Kairo is reviewing recent conversations and drafting stronger answers…</p>
+        )}
+        {!scanning && scanned && suggestions.length === 0 && (
+          <p className="text-sm text-[#A0AEC0]" data-testid="suggestions-empty">{scanMsg || "No weak replies found — your AI is answering confidently."}</p>
+        )}
+        {!scanning && suggestions.length > 0 && (
+          <ul className="space-y-4" data-testid="suggestions-list">
+            {suggestions.map(s => (
+              <li key={s.message_id} className="bg-[#0D1117] border border-[#48BB78]/25 rounded-lg p-3" data-testid={`suggestion-${s.message_id}`}>
+                {s.question && <p className="text-[12px] text-white/50 mb-1"><span className="text-white/30 font-bold uppercase tracking-widest text-[10px] mr-1">Visitor</span>{s.question}</p>}
+                <p className="text-[12px] text-white/45 mb-2 line-through"><span className="text-red-300/70 font-bold uppercase tracking-widest text-[10px] mr-1 no-underline inline-block">Weak reply</span>{s.original || "(no answer)"}</p>
+                <p className="text-[10px] uppercase tracking-widest text-[#48BB78] font-bold mb-1">Kairo suggests</p>
+                <Textarea data-testid={`suggestion-edit-${s.message_id}`} value={sugEdits[s.message_id] ?? s.suggested} onChange={e => setSugEdits(x => ({ ...x, [s.message_id]: e.target.value }))} className="bg-[#141B24] border-[#48BB78]/30 text-white min-h-[70px] text-sm"/>
+                <Button data-testid={`suggestion-apply-${s.message_id}`} onClick={() => applySuggestion(s)} disabled={applyingId === s.message_id} size="sm" className="mt-2 bg-[#48BB78] hover:bg-[#38A169] text-[#1A202C] hover:text-white font-bold rounded-md">
+                  {applyingId === s.message_id ? <Loader2 size={13} className="mr-1.5 animate-spin"/> : <Check size={13} className="mr-1.5"/>}Approve suggestion
+                </Button>
+              </li>
+            ))}
+          </ul>
+        )}
+        {!scanned && !scanning && (
+          <p className="text-sm text-[#A0AEC0]">Click “Scan for weak replies” and Kairo will surface the answers most worth improving.</p>
+        )}
+      </Card>
       <div className="grid sm:grid-cols-3 gap-4" data-testid="training-analytics">
         <div className="bg-[#141B24] border border-white/5 rounded-2xl p-5">
           <p className="text-[10px] uppercase tracking-[0.25em] font-bold text-[#48BB78] mb-1">Approved answers</p>
