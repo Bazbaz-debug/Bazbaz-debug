@@ -120,3 +120,12 @@ See `/app/memory/test_credentials.md`
 - ✅ **Reviews = Fresh N Clean LLC** — featured testimonial rewritten to their story (prior freelancer's basic AI vs Kairo booking cleaning jobs), section retitled "They tried a basic bot. Then they tried Kairo."
 - ✅ **"Why this matters" footer** — persuasive sell copy (even for a simple Upwork booking) + 4 value cards (Never miss a lead / Browsers→bookings / Sounds like you / Live in minutes) + gradient "Let's talk".
 - ✅ Frontend testing agent: 11/11 pass (flip word animates, images load naturalWidth>0, Fresh N Clean present, why-grid present, wrong creds show inline error, correct admin creds route to /admin). No console errors.
+
+## What's been implemented — 06 Aug 2026 (chatbot widget + conversation upgrade)
+- ✅ **Removed the green logo & "Powered by AI"** — widget header/message avatars are now a subtle MessageCircle icon (no bright green block); the "Powered by Kairo AI" footer is gone.
+- ✅ **Closed launcher = message icon** (was a robot face) in Widget.jsx.
+- ✅ **30s proactive nudge** — Widget closed-state + embed loader.js now show "👋 Talk to us here — in any language." at 30s with a bouncing arrow pointing to the message launcher (loader teaser retimed 1.8s→30s, hides at 46s).
+- ✅ **Full-screen Live Preview** — the preview Dialog now covers the whole viewport edge-to-edge (forced with !important overrides). Verified 1920×1011.
+- ✅ **Smart, human conversation (text + voice)** — rewrote /api/chat/stream system prompt: warm greetings/small-talk ("Hey there! How's your day going?") instead of robotic "Here to help you with anything"; matches energy, stays concise, keeps [[LANG:xx]] + [[ACTION]] markers. Voice call reuses the same pipeline.
+- ✅ **Multi-turn MEMORY fix** — chat_stream now injects the last 12 messages of the session into the prompt, so it remembers names/sizes/context across turns (was previously stateless).
+- ✅ Tested: backend chat 5/5 (memory, warmth, language, escalation), frontend widget 10/10 (full-screen preview, message launcher, 30s nudge "any language", no Powered-by, warm "hi" reply). No console errors.
