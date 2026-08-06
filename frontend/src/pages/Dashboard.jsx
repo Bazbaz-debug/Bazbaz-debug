@@ -503,6 +503,13 @@ function SettingsPanel({ user, updateField, refresh, colors }) {
               <ColorPicker testId="color-accent" label="Button / accent color" value={colors.accent_color} onChange={v => updateField("accent_color", v)}/>
             </div>
           </Card>
+          <Card title="Message colors" subtitle="Fine-tune the chat bubbles — live-sync with the widget">
+            <div className="space-y-4">
+              <ColorPicker testId="color-bot-text" label="Bot message text color" value={colors.bot_text_color} onChange={v => updateField("bot_text_color", v)}/>
+              <ColorPicker testId="color-bot-bubble" label="Bot message bubble color" value={colors.bot_bubble_color} onChange={v => updateField("bot_bubble_color", v)}/>
+              <ColorPicker testId="color-user-text" label="Your message text color" value={colors.user_text_color} onChange={v => updateField("user_text_color", v)}/>
+            </div>
+          </Card>
         </TabsContent>
 
         <TabsContent value="bot" className="space-y-6">

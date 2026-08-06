@@ -135,6 +135,9 @@ See `/app/memory/test_credentials.md`
 - ✅ **Occasional emoji** — chat_stream prompt now encourages one tasteful emoji now and then on light/positive replies (never on serious topics). Verified live: "Hey! How's your day going? 😊".
 - ✅ **Emoji stripped from voice/TTS** — spoken text has emoji removed so they aren't read aloud (text + lipsync paths).
 
+## What's been implemented — 06 Aug 2026 (chatbot message color settings)
+- ✅ **Message color customization** — Settings → Branding now has a "Message colors" card with 3 pickers: Bot message text color (`bot_text_color`), Bot message bubble color (`bot_bubble_color`), Your message text color (`user_text_color`). Backend `ProfileUpdate`/tenant models + `PUT /api/me/profile` persist them; Widget.jsx applies them live to chat bubbles. Verified persistence via API + pickers render (data-testids color-bot-text / color-bot-bubble / color-user-text). Live AI chat NOT tested — LLM key budget exhausted (user chose to skip top-up).
+
 ## What's been implemented — 06 Aug 2026 (faster + smarter chat + voice greeting)
 - ✅ **Faster replies** — reverted the slow buffer-then-typewriter; widget now LIVE-streams tokens (throttled ~40ms) so text appears instantly and still reads like natural typing. Fixed the "hi is delayed" issue.
 - ✅ **Smarter answers** — prompt now: (5b) EXPLAIN don't link — explains what a product/service is + the benefit in plain language, NEVER pastes raw URLs / reads web addresses; (5c) always-be-closing — after answering, invites the next step (book/quote/order) with one friendly question. Verified: "stripping and waxing?" → explains it + "Would you like a quote?" (no URL).
