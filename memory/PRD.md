@@ -129,3 +129,8 @@ See `/app/memory/test_credentials.md`
 - ✅ **Smart, human conversation (text + voice)** — rewrote /api/chat/stream system prompt: warm greetings/small-talk ("Hey there! How's your day going?") instead of robotic "Here to help you with anything"; matches energy, stays concise, keeps [[LANG:xx]] + [[ACTION]] markers. Voice call reuses the same pipeline.
 - ✅ **Multi-turn MEMORY fix** — chat_stream now injects the last 12 messages of the session into the prompt, so it remembers names/sizes/context across turns (was previously stateless).
 - ✅ Tested: backend chat 5/5 (memory, warmth, language, escalation), frontend widget 10/10 (full-screen preview, message launcher, 30s nudge "any language", no Powered-by, warm "hi" reply). No console errors.
+
+## What's been implemented — 06 Aug 2026 (typing personality)
+- ✅ **Lifelike typing pauses** — Widget now buffers the streamed reply and reveals it word-by-word via a typewriter effect (initial ~350ms "composing" pause with typing dots, then per-word delays with longer pauses after . ! ? and commas; auto-speeds for long replies). Skipped during live voice calls so speech isn't delayed.
+- ✅ **Occasional emoji** — chat_stream prompt now encourages one tasteful emoji now and then on light/positive replies (never on serious topics). Verified live: "Hey! How's your day going? 😊".
+- ✅ **Emoji stripped from voice/TTS** — spoken text has emoji removed so they aren't read aloud (text + lipsync paths).

@@ -15,6 +15,7 @@ function resolveLogoUrl(logo_url) {
 }
 
 // Parse action + language + buy markers from streaming text
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 function extractActions(text) {
   const actions = [];
   const re = /\[\[ACTION:([a-zA-Z_]+)(?::([^\]]+))?\]\]/g;
@@ -198,6 +199,24 @@ export default function Widget({ tenant, colors, catalog, embedded = false, onCl
     } catch { toast.error("Booking failed"); }
   }, [tenant]);
 
+  // Reveal a reply with lifelike, human typing pauses (word-by-word, slower after punctuation)
+  const typeOut = useCallback(async (full, buys) => {
+    const setLast = (txt, extra = {}) => setMessages(m => { const c = [...m]; c[c.length - 1] = { role: "assistant", text: txt, ...extra }; return c; });
+    const fast = full.length > 300 ? 0.45 : 1;
+    await sleep((330 + Math.random() * 380) * fast); // human "composing" pause
+    const tokens = full.match(/\S+\s*/g) || [full];
+    let shown = "";
+    for (let i = 0; i < tokens.length; i++) {
+      shown += tokens[i];
+      setLast(shown);
+      const last = tokens[i].trim().slice(-1);
+      if (/[.!?]/.test(last)) await sleep((180 + Math.random() * 170) * fast);
+      else if (/[,;:]/.test(last)) await sleep((85 + Math.random() * 90) * fast);
+      else await sleep((38 + Math.random() * 45) * fast);
+    }
+    setLast(full, { buys });
+  }, []);
+
   const sendText = useCallback(async (text) => {
     if (!text.trim() || busy) return;
     setMessages(m => [...m, { role: "user", text }, { role: "assistant", text: "" }]);
@@ -219,26 +238,28 @@ export default function Widget({ tenant, colors, catalog, embedded = false, onCl
           if (!line.startsWith("data: ")) continue;
           try {
             const p = JSON.parse(line.slice(6));
-            if (p.delta) {
-              acc += p.delta;
-              const { clean, lang } = extractActions(acc);
-              if (lang && lang !== replyLang) setReplyLang(lang);
-              setMessages(m => { const c=[...m]; c[c.length-1]={role:"assistant",text:clean}; return c; });            }
+            if (p.delta) { acc += p.delta; }
           } catch {}
         }
       }
       // Final: check for action markers + language + buy
       const { clean, actions, lang, buys } = extractActions(acc);
       if (lang) setReplyLang(lang);
-      setMessages(m => { const c=[...m]; c[c.length-1]={role:"assistant",text:clean, buys}; return c; });
-      // Play TTS with clean text (pass lang so browser picks matching voice)
-      if (clean && voiceMode) {
+      if (callActiveRef.current) {
+        // In a live voice call, show text immediately so speech isn't delayed
+        setMessages(m => { const c=[...m]; c[c.length-1]={role:"assistant",text:clean, buys}; return c; });
+      } else {
+        await typeOut(clean, buys);
+      }
+      // Play TTS with clean text (strip emoji so they aren't read aloud; pass lang for voice)
+      const spoken = clean.replace(/[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{2190}-\u{21FF}\u{2B00}-\u{2BFF}\u{FE0F}\u{200D}]/gu, "").replace(/\s{2,}/g, " ").trim();
+      if (spoken && voiceMode) {
         if (lipsyncMode && tenant?.id) {
           setGeneratingVideo(true);
           try {
             const rr = await fetch(`${API}/avatar/lipsync`, {
               method: "POST", headers: {"Content-Type":"application/json"},
-              body: JSON.stringify({ tenant_id: tenant.id, text: clean.slice(0, 800) }),
+              body: JSON.stringify({ tenant_id: tenant.id, text: spoken.slice(0, 800) }),
             });
             const dd = await rr.json();
             if (dd.video_url) {
@@ -251,10 +272,10 @@ export default function Widget({ tenant, colors, catalog, embedded = false, onCl
               audio.play();
               if (dd.error) toast.error(`Lipsync fallback: ${dd.error.slice(0,60)}`);
             }
-          } catch { await playTTS(clean, lang); }
+          } catch { await playTTS(spoken, lang); }
           finally { setGeneratingVideo(false); }
         } else {
-          await playTTS(clean, lang);
+          await playTTS(spoken, lang);
         }
       }
       // Execute actions AFTER speaking
@@ -264,7 +285,7 @@ export default function Widget({ tenant, colors, catalog, embedded = false, onCl
       }
     } catch (e) { toast.error("Chat failed"); }
     finally { setBusy(false); }
-  }, [busy, sessionId, tenant, voiceMode, lipsyncMode, playTTS, escalate, bookSlot]);
+  }, [busy, sessionId, tenant, voiceMode, lipsyncMode, playTTS, escalate, bookSlot, typeOut]);
 
   // ============ Poll for human_agent replies (business-owner takeover) ============
   const lastHumanCheckRef = useRef(new Date().toISOString());
