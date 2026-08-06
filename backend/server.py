@@ -1154,6 +1154,27 @@ async def chat_stream(req: ChatReq):
                 if used_ids:
                     await db.training_corrections.update_many({"id": {"$in": used_ids}}, {"$inc": {"used_count": 1}, "$set": {"last_used_at": now_iso()}})
 
+    # Inject recent conversation history so the assistant genuinely remembers the session.
+    # (Runs before the current inbound message is persisted below, so no duplication.)
+    if tenant_id:
+        prior = await db.messages.find(
+            {"session_id": req.session_id, "tenant_id": tenant_id},
+            {"_id": 0, "role": 1, "text": 1, "created_at": 1},
+        ).sort("created_at", 1).to_list(200)
+        convo_lines = []
+        for m in prior[-12:]:
+            txt = (m.get("text") or "").strip()
+            if not txt:
+                continue
+            who = "Visitor" if m.get("role") == "user" else "You"
+            convo_lines.append(f"{who}: {txt}")
+        if convo_lines:
+            system += (
+                "\n\n=== CONVERSATION SO FAR (your memory of this chat — continue naturally, "
+                "reference these details, and never re-ask for anything already given) ===\n"
+                + "\n".join(convo_lines)
+            )
+
     chat = LlmChat(api_key=EMERGENT_LLM_KEY, session_id=req.session_id, system_message=system).with_model("openai", "gpt-4o")
 
     # increment chats counter

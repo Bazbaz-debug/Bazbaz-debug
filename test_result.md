@@ -110,9 +110,9 @@ user_problem_statement: |
 backend:
   - task: "Conversational chatbot system prompt (human small-talk in text + voice) — /api/chat/stream"
     implemented: true
-    working: false
+    working: true
     file: "backend/server.py"
-    stuck_count: 1
+    stuck_count: 0
     priority: "high"
     needs_retesting: false
     status_history:
@@ -191,6 +191,62 @@ backend:
           
           The warm, human-like behavior requested in the review is working correctly. However, 
           the memory issue is a blocker for production use and needs to be fixed.
+      - working: true
+        agent: "testing"
+        comment: |
+          ✅ ALL TESTS PASSED (5/5) - MEMORY FIX VERIFIED, CHATBOT FULLY FUNCTIONAL
+          
+          Re-tested POST /api/chat/stream after MEMORY fix (lines 1157-1176 in server.py now 
+          inject recent conversation history into system prompt). All 5 critical tests from 
+          review request now PASS:
+          
+          ✅ TEST 1: MEMORY (CRITICAL - Previously failing, now FIXED)
+          • Session: memtest-1 (same session_id for all 3 messages)
+          • Message 1: "my name is Sam and I want size 10 sneakers"
+            → Reply: "[[LANG:en]]Hey Sam! Great choice—size 10 is super popular! Are you looking for a specific color or style?"
+          • Message 2: "what size did I say?"
+            → Reply: "[[LANG:en]]You mentioned you're looking for size 10 sneakers. 😊 Any color or style you're leaning towards?"
+            → ✅ PASS: Correctly remembers "size 10" from previous message
+          • Message 3: "and what's my name?"
+            → Reply: "[[LANG:en]] Your name's Sam! 😊"
+            → ✅ PASS: Correctly remembers name "Sam" from first message
+          
+          ✅ TEST 2: WARMTH RETAINED
+          • New session, message: "hi"
+          • Reply: "[[LANG:en]]Hey there! How's your day going?"
+          • ✅ PASS: Warm, human-like greeting (asks friendly question)
+          • ✅ PASS: NOT robotic "Here to help you with anything"
+          
+          ✅ TEST 3: LANGUAGE RETAINED
+          • New session, message: "hola"
+          • Reply: "[[LANG:es]]¡Hola! ¿Cómo va tu día?"
+          • ✅ PASS: Reply starts with [[LANG:es]] marker
+          • ✅ PASS: Reply is in Spanish
+          
+          ✅ TEST 4: ESCALATION RETAINED
+          • New session, message: "I want to talk to a human"
+          • Reply: "[[LANG:en]]Sure thing! I'll get you connected with someone who can help. [[ACTION:escalate]]"
+          • ✅ PASS: Reply contains [[ACTION:escalate]] marker
+          
+          ✅ TEST 5: NO 500s
+          • All HTTP requests returned 200 with non-empty streams
+          • No errors encountered
+          
+          MEMORY FIX DETAILS:
+          The fix injects the last 12 messages from db.messages (filtered by session_id and 
+          tenant_id) into the system prompt with clear instructions: "=== CONVERSATION SO FAR 
+          (your memory of this chat — continue naturally, reference these details, and never 
+          re-ask for anything already given) ===". This allows the LLM to maintain context 
+          across multiple turns in the same session.
+          
+          FINAL STATUS:
+          • Memory/context retention: ✅ WORKING (previously broken, now fixed)
+          • Warm, human-like responses: ✅ WORKING (retained from previous fix)
+          • Language detection: ✅ WORKING (Spanish, English markers correct)
+          • Escalation action: ✅ WORKING ([[ACTION:escalate]] marker present)
+          • No errors: ✅ WORKING (all 200 responses, no 500s)
+          
+          The chatbot is now production-ready. All critical functionality verified and working.
 
   - task: "Embed loader.js proactive nudge (30s, 'any language' + arrow) — /api/embed/{id}/loader.js"
     implemented: true
@@ -757,14 +813,13 @@ frontend:
 
 metadata:
   created_by: "main_agent"
-  version: "1.7"
-  test_sequence: 7
+  version: "1.8"
+  test_sequence: 8
   run_ui: false
 
 test_plan:
   current_focus: []
-  stuck_tasks:
-    - "Conversational chatbot system prompt (human small-talk in text + voice) — /api/chat/stream"
+  stuck_tasks: []
   test_all: false
   test_priority: "high_first"
 
@@ -1036,3 +1091,42 @@ agent_communication:
       RECOMMENDATION: Investigate LlmChat session configuration or implement custom conversation 
       history management by storing/retrieving messages from db.messages and passing them to 
       LlmChat as context.
+
+  - agent: "testing"
+    message: |
+      ✅ MEMORY FIX VERIFIED - ALL 5 CRITICAL TESTS NOW PASS (5/5)
+      
+      Re-tested POST /api/chat/stream after MEMORY fix. Main agent implemented conversation 
+      history injection (lines 1157-1176 in server.py) that fetches the last 12 messages from 
+      db.messages and injects them into the system prompt with clear instructions to reference 
+      previous context.
+      
+      TEST RESULTS:
+      
+      ✅ TEST 1: MEMORY (CRITICAL - Previously failing, now FIXED)
+      • Session: memtest-1 (same session_id for all 3 messages)
+      • Message 1: "my name is Sam and I want size 10 sneakers"
+        → "[[LANG:en]]Hey Sam! Great choice—size 10 is super popular! Are you looking for a specific color or style?"
+      • Message 2: "what size did I say?"
+        → "[[LANG:en]]You mentioned you're looking for size 10 sneakers. 😊 Any color or style you're leaning towards?"
+        → ✅ PASS: Correctly remembers "size 10"
+      • Message 3: "and what's my name?"
+        → "[[LANG:en]] Your name's Sam! 😊"
+        → ✅ PASS: Correctly remembers "Sam"
+      
+      ✅ TEST 2: WARMTH RETAINED
+      • Message: "hi" → "[[LANG:en]]Hey there! How's your day going?"
+      • ✅ PASS: Warm, human-like (NOT robotic)
+      
+      ✅ TEST 3: LANGUAGE RETAINED
+      • Message: "hola" → "[[LANG:es]]¡Hola! ¿Cómo va tu día?"
+      • ✅ PASS: [[LANG:es]] marker + Spanish reply
+      
+      ✅ TEST 4: ESCALATION RETAINED
+      • Message: "I want to talk to a human" → "[[LANG:en]]Sure thing! I'll get you connected with someone who can help. [[ACTION:escalate]]"
+      • ✅ PASS: [[ACTION:escalate]] marker present
+      
+      ✅ TEST 5: NO 500s
+      • All requests returned HTTP 200 with non-empty streams
+      
+      FINAL STATUS: Chatbot is now production-ready. All critical functionality working correctly.
