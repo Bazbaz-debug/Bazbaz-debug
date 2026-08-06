@@ -444,6 +444,9 @@ class ProfileUpdate(BaseModel):
     widget_bg: Optional[str] = None
     bubble_color: Optional[str] = None
     accent_color: Optional[str] = None
+    user_text_color: Optional[str] = None
+    bot_bubble_color: Optional[str] = None
+    bot_text_color: Optional[str] = None
     active_slots: Optional[List[str]] = None
     spending_points: Optional[int] = None
     crawled_url: Optional[str] = None
@@ -484,6 +487,9 @@ class AdminClientUpdate(BaseModel):
     widget_bg: Optional[str] = None
     bubble_color: Optional[str] = None
     accent_color: Optional[str] = None
+    user_text_color: Optional[str] = None
+    bot_bubble_color: Optional[str] = None
+    bot_text_color: Optional[str] = None
     # per-client contact / notification
     notification_email: Optional[str] = None
     business_owner_phone: Optional[str] = None
@@ -696,6 +702,9 @@ async def public_tenant(tenant_id: str):
         "widget_bg": t.get("widget_bg") or "#1A202C",
         "bubble_color": t.get("bubble_color") or "#48BB78",
         "accent_color": t.get("accent_color") or "#48BB78",
+        "user_text_color": t.get("user_text_color") or "#0D1117",
+        "bot_bubble_color": t.get("bot_bubble_color") or "",
+        "bot_text_color": t.get("bot_text_color") or "#FFFFFF",
         "avatar_gender": t.get("avatar_gender") or "female",
         "avatar_background": t.get("avatar_background") or "studio_dark",
         "catalog": (t.get("catalog") or [])[:8],

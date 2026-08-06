@@ -58,6 +58,9 @@ export default function Dashboard() {
     widget_bg: user.widget_bg || "#1A202C",
     bubble_color: user.bubble_color || "#48BB78",
     accent_color: user.accent_color || "#48BB78",
+    user_text_color: user.user_text_color || "#0D1117",
+    bot_bubble_color: user.bot_bubble_color || "#232B36",
+    bot_text_color: user.bot_text_color || "#FFFFFF",
   };
 
   return (

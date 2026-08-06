@@ -42,6 +42,9 @@ export default function Widget({ tenant, colors, catalog, embedded = false, onCl
   const bg = colors?.widget_bg || "#1A202C";
   const bubble = colors?.bubble_color || "#48BB78";
   const accent = colors?.accent_color || "#48BB78";
+  const userText = colors?.user_text_color || "#0D1117";
+  const botBubbleBg = colors?.bot_bubble_color || "rgba(255,255,255,0.055)";
+  const botText = colors?.bot_text_color || "#ffffff";
   const gender = tenant?.avatar_gender || "female";
 
   const [open, setOpen] = useState(true);
@@ -575,7 +578,7 @@ export default function Widget({ tenant, colors, catalog, embedded = false, onCl
                   {isHuman ? <Headset size={12} className="text-[#0D1117]"/> : <MessageCircle size={12} style={{ color: accent }} strokeWidth={2.4}/>}
                 </div>
               )}
-              <div className={`max-w-[80%] px-4 py-2.5 text-[13.5px] leading-relaxed ${isUser ? "rounded-[18px] rounded-br-[4px]" : "rounded-[18px] rounded-bl-[4px]"}`} style={isUser ? { background: `linear-gradient(135deg, ${bubble}, ${bubble}dd)`, color: "#0D1117", boxShadow: `0 6px 20px ${bubble}33` } : isHuman ? { background: "rgba(72,187,120,0.14)", color: "#fff", border: "1px solid rgba(72,187,120,0.45)", boxShadow: "0 4px 16px rgba(72,187,120,0.15)" } : { background: "rgba(255,255,255,0.055)", color: "#fff", border: "1px solid rgba(255,255,255,0.08)", backdropFilter: "blur(8px)", boxShadow: "0 4px 16px rgba(0,0,0,0.15)" }}>
+              <div className={`max-w-[80%] px-4 py-2.5 text-[13.5px] leading-relaxed ${isUser ? "rounded-[18px] rounded-br-[4px]" : "rounded-[18px] rounded-bl-[4px]"}`} style={isUser ? { background: `linear-gradient(135deg, ${bubble}, ${bubble}dd)`, color: userText, boxShadow: `0 6px 20px ${bubble}33` } : isHuman ? { background: "rgba(72,187,120,0.14)", color: "#fff", border: "1px solid rgba(72,187,120,0.45)", boxShadow: "0 4px 16px rgba(72,187,120,0.15)" } : { background: botBubbleBg, color: botText, border: "1px solid rgba(255,255,255,0.08)", backdropFilter: "blur(8px)", boxShadow: "0 4px 16px rgba(0,0,0,0.15)" }}>
                 {isHuman && (
                   <p className="text-[9px] uppercase tracking-widest font-bold mb-1" style={{ color: accent }} data-testid={`widget-humanmsg-${i}`}>Support · Human</p>
                 )}
