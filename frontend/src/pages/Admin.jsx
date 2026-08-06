@@ -4,7 +4,8 @@ import { KairoMark } from "@/components/KairoLogo";
 import { toast } from "sonner";
 import api from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
-import { Shield, UserPlus, KeyRound, PowerOff, Power, Files, LogOut, Edit3, Save, Bot, Activity, MessagesSquare, CalendarCheck, Mic, PhoneCall, Users, Video, FileText, TrendingUp, CheckCircle2, XCircle, Settings, BarChart3, Upload, Sliders, Globe, Mail, Video as VideoIcon, Phone, Eye, ScrollText, Search, Sparkles, Trash2, Clock, Inbox, ClipboardList } from "lucide-react";
+import { Shield, UserPlus, KeyRound, PowerOff, Power, Files, LogOut, Edit3, Save, Bot, Activity, MessagesSquare, CalendarCheck, Mic, PhoneCall, Users, Video, FileText, TrendingUp, CheckCircle2, XCircle, Settings, BarChart3, Upload, Sliders, Globe, Mail, Video as VideoIcon, Phone, Eye, ScrollText, Search, Sparkles, Trash2, Clock, Inbox, ClipboardList, ChevronDown, LayoutDashboard, ArrowRight } from "lucide-react";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -37,6 +38,8 @@ export default function Admin() {
   const [manageFiles, setManageFiles] = useState([]);
   const [audit, setAudit] = useState([]);
   const [auditQ, setAuditQ] = useState("");
+  const [section, setSection] = useState("dashboard");
+  const [counts, setCounts] = useState({ waitlist: 0, reservations: 0 });
 
   const loadAudit = useCallback(async (q = "") => {
     try { const { data } = await api.get(`/admin/audit${q ? `?q=${encodeURIComponent(q)}` : ""}`); setAudit(data.logs || []); } catch {}
@@ -56,6 +59,10 @@ export default function Admin() {
     setStats(st.data);
     setHealth(h.data);
     setActivity(act.data);
+    try {
+      const [wl, rv] = await Promise.all([api.get("/admin/waitlist"), api.get("/admin/reservations")]);
+      setCounts({ waitlist: wl.data.count ?? (wl.data.entries || []).length, reservations: rv.data.count ?? (rv.data.reservations || []).length });
+    } catch { /* counts are best-effort */ }
   }, []);
 
   useEffect(() => { load(); const t = setInterval(load, 10000); return () => clearInterval(t); }, [load]);
@@ -134,87 +141,85 @@ export default function Admin() {
   };
 
   return (
-    <div className="min-h-screen bg-[#1A202C] text-white relative">
-      <header className="border-b border-white/5 px-6 md:px-10 py-4 flex items-center justify-between sticky top-0 bg-[#1A202C]/95 backdrop-blur z-30">
-        <div className="flex items-center gap-2">
-          <div className="w-9 h-9 rounded-md bg-[#48BB78] flex items-center justify-center text-[#1A202C]"><KairoMark size={22}/></div>
-          <div>
-            <p className="font-display font-black text-lg leading-none">Kairo</p>
-            <p className="text-xs text-[#48BB78] mt-0.5 uppercase tracking-[0.2em] font-bold flex items-center gap-1"><Shield size={10}/> Admin Control Center</p>
+    <div className="min-h-screen bg-[#1A202C] text-white flex">
+      <AdminSidebar section={section} setSection={setSection} counts={counts} clientsCount={users.length} user={user} onLogout={() => { logout(); nav("/"); }} />
+      <main className="flex-1 min-w-0 flex flex-col">
+        {/* TOP BAR — context switcher (Admin ↔ client workspaces) */}
+        <header className="border-b border-white/5 px-6 md:px-10 py-3 flex items-center justify-between sticky top-0 bg-[#1A202C]/95 backdrop-blur z-30">
+          <ContextSwitcher users={users} onViewAs={viewAs} />
+          <div className="flex gap-2">
+            <Button data-testid="admin-goto-dashboard" onClick={() => nav("/dashboard")} variant="outline" size="sm" className="border-white/10 bg-transparent text-white hover:bg-white/5"><LayoutDashboard size={14} className="mr-1"/>My Workspace</Button>
+            <Button data-testid="admin-logout" onClick={() => { logout(); nav("/"); }} variant="outline" size="sm" className="border-white/10 bg-transparent text-white hover:bg-white/5"><LogOut size={14} className="mr-1"/> Logout</Button>
           </div>
-        </div>
-        <div className="flex gap-2">
-          <Button data-testid="admin-goto-dashboard" onClick={() => nav("/dashboard")} variant="outline" size="sm" className="border-white/10 bg-transparent text-white hover:bg-white/5">Dashboard</Button>
-          <Button data-testid="admin-logout" onClick={() => { logout(); nav("/"); }} variant="outline" size="sm" className="border-white/10 bg-transparent text-white hover:bg-white/5"><LogOut size={14} className="mr-1"/> Logout</Button>
-        </div>
-      </header>
+        </header>
 
-      <div className="px-6 md:px-10 py-8 space-y-8 relative">
-        <MouseGradient color="#48BB78" intensity={0.06}/>
-        <div className="relative z-10">
-          <p className="uppercase text-xs tracking-[0.3em] font-bold text-[#48BB78] mb-2">Super-User Control Center</p>
-          <h1 className="font-display font-black text-4xl tracking-tight">Command &amp; conquer.</h1>
-        </div>
+        <div className="px-6 md:px-10 py-8 relative flex-1 max-w-[1400px] w-full mx-auto">
+          <MouseGradient color="#48BB78" intensity={0.06}/>
+          <Tabs value={section} onValueChange={setSection} className="relative z-10">
 
-        {/* GLOBAL STATS ROW */}
-        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3 relative z-10" data-testid="admin-stats-row">
-          <Stat icon={<Users size={14}/>} label="Clients" v={`${stats.active_clients || 0}/${stats.total_clients || 0}`}/>
-          <Stat icon={<MessagesSquare size={14}/>} label="Chats" v={stats.total_chats || 0}/>
-          <Stat icon={<CalendarCheck size={14}/>} label="Bookings (7d)" v={stats.bookings_week || 0}/>
-          <Stat icon={<Mic size={14}/>} label="Voice min" v={stats.voice_minutes || 0}/>
-          <Stat icon={<Video size={14}/>} label="Videos" v={stats.videos_generated || 0}/>
-          <Stat icon={<PhoneCall size={14}/>} label="Calls" v={`${stats.live_calls || 0}/${stats.total_calls || 0}`}/>
-        </div>
-
-        <Tabs defaultValue="overview" className="relative z-10">
-          <TabsList className="bg-[#2D3748] border border-white/5 rounded-md p-1 h-11 mb-6 grid grid-cols-5 max-w-2xl">
-            <TabsTrigger data-testid="admin-tab-overview" value="overview" className="data-[state=active]:bg-[#1A202C] data-[state=active]:text-[#48BB78] data-[state=active]:shadow-none text-[#A0AEC0]"><BarChart3 size={14} className="mr-1.5"/>Overview</TabsTrigger>
-            <TabsTrigger data-testid="admin-tab-clients" value="clients" className="data-[state=active]:bg-[#1A202C] data-[state=active]:text-[#48BB78] data-[state=active]:shadow-none text-[#A0AEC0]"><Users size={14} className="mr-1.5"/>Clients</TabsTrigger>
-            <TabsTrigger data-testid="admin-tab-activity" value="activity" className="data-[state=active]:bg-[#1A202C] data-[state=active]:text-[#48BB78] data-[state=active]:shadow-none text-[#A0AEC0]"><Activity size={14} className="mr-1.5"/>Activity</TabsTrigger>
-            <TabsTrigger data-testid="admin-tab-audit" value="audit" className="data-[state=active]:bg-[#1A202C] data-[state=active]:text-[#48BB78] data-[state=active]:shadow-none text-[#A0AEC0]"><ScrollText size={14} className="mr-1.5"/>Audit</TabsTrigger>
-            <TabsTrigger data-testid="admin-tab-waitlist" value="waitlist" className="data-[state=active]:bg-[#1A202C] data-[state=active]:text-[#48BB78] data-[state=active]:shadow-none text-[#A0AEC0]"><Inbox size={14} className="mr-1.5"/>Waitlist</TabsTrigger>
-            <TabsTrigger data-testid="admin-tab-reservations" value="reservations" className="data-[state=active]:bg-[#1A202C] data-[state=active]:text-[#48BB78] data-[state=active]:shadow-none text-[#A0AEC0]"><ClipboardList size={14} className="mr-1.5"/>Reservations</TabsTrigger>
-            <TabsTrigger data-testid="admin-tab-settings" value="settings" className="data-[state=active]:bg-[#1A202C] data-[state=active]:text-[#48BB78] data-[state=active]:shadow-none text-[#A0AEC0]"><Settings size={14} className="mr-1.5"/>System</TabsTrigger>
-          </TabsList>
-
-          {/* OVERVIEW */}
-          <TabsContent value="overview" className="space-y-6">
-            {/* INTEGRATION HEALTH */}
-            <div className="bg-[#2D3748] border border-white/5 rounded-md p-6">
-              <h3 className="font-display font-bold text-lg mb-4">Integration Health</h3>
-              <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                <HealthCard testId="health-llm" ok={health.emergent_llm} label="Emergent LLM (GPT 5.6 Terra)" detail={health.emergent_llm ? "Connected" : "Missing key"}/>
-                <HealthCard testId="health-resend" ok={health.resend} label="Resend Emails" detail={health.resend ? "Sending live" : "Missing key"}/>
-                <HealthCard testId="health-ses" ok={health.ses} label="Amazon SES" detail={health.ses ? "Preferred sender" : "Add AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, SES_FROM_EMAIL"}/>
-                <HealthCard testId="health-telnyx" ok={health.telnyx_can_call} label="Telnyx Voice + SMS" detail={health.telnyx_can_call ? `From ${health.telnyx_phone}` : health.telnyx_configured ? "Key set - need TELNYX_PHONE_NUMBER" : "Not configured"}/>
-                <HealthCard testId="health-twilio" ok={health.twilio_can_call} label="Twilio (fallback)" detail={health.twilio_can_call ? `From ${health.twilio_from}` : health.twilio_configured ? "Need TWILIO_PHONE_NUMBER" : "Not configured"}/>
-                <HealthCard testId="health-google" ok={health.google_oauth} label="Google Calendar OAuth" detail={health.google_oauth ? "OAuth ready" : "Set GOOGLE_CLIENT_ID / SECRET"}/>
-                <HealthCard testId="health-fal" ok={health.fal_configured} label="Fal.ai Lip-Sync" detail={health.fal_configured ? "Key set (verify balance)" : "Missing FAL_KEY"}/>
-                <HealthCard testId="health-storage" ok={health.object_storage} label="Emergent Object Storage" detail={health.object_storage ? "Initialized" : "Init failed"}/>
-              </div>
+          {/* DASHBOARD */}
+          <TabsContent value="dashboard" className="space-y-8 mt-0" data-testid="admin-section-dashboard">
+            <div>
+              <p className="uppercase text-xs tracking-[0.3em] font-bold text-[#48BB78] mb-2">Super-User Control Center</p>
+              <h1 className="font-display font-black text-4xl tracking-tight">Command &amp; conquer.</h1>
+              <p className="text-[#A0AEC0] mt-2">Your whole platform at a glance. Jump into any area from the menu on the left.</p>
             </div>
 
-            {/* PLATFORM CONFIG */}
-            <div className="bg-[#2D3748] rounded-md p-6 border border-white/5 space-y-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h3 className="font-display font-bold text-lg mb-1">Toggle Public Signup Page</h3>
-                  <p className="text-sm text-[#A0AEC0]">When OFF, landing hides public registration &mdash; access only via manual login.</p>
-                </div>
-                <Switch data-testid="admin-signup-toggle" checked={signupEnabled} onCheckedChange={toggleSignup}/>
-              </div>
-              <div className="flex items-center justify-between border-t border-white/5 pt-4">
-                <div>
-                  <h3 className="font-display font-bold text-lg mb-1">File Upload Policy</h3>
-                  <p className="text-sm text-[#A0AEC0]">Who can upload knowledge base files. Admin-Only lets you gatekeep every tenant&apos;s files.</p>
-                </div>
-                <div className="flex gap-2" data-testid="upload-policy-group">
-                  <button data-testid="upload-policy-client" onClick={() => setUploadPolicy("client_self_serve")} className={`px-3 py-2 rounded-md text-xs font-bold ${uploadPolicy === "client_self_serve" ? "bg-[#48BB78] text-[#1A202C]" : "bg-[#1A202C] text-[#A0AEC0] border border-white/10"}`}>Client self-serve</button>
-                  <button data-testid="upload-policy-admin" onClick={() => setUploadPolicy("admin_only")} className={`px-3 py-2 rounded-md text-xs font-bold ${uploadPolicy === "admin_only" ? "bg-[#48BB78] text-[#1A202C]" : "bg-[#1A202C] text-[#A0AEC0] border border-white/10"}`}>Admin only</button>
-                </div>
-              </div>
+            {/* GLOBAL STATS ROW */}
+            <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3" data-testid="admin-stats-row">
+              <Stat icon={<Users size={14}/>} label="Clients" v={`${stats.active_clients || 0}/${stats.total_clients || 0}`}/>
+              <Stat icon={<MessagesSquare size={14}/>} label="Chats" v={stats.total_chats || 0}/>
+              <Stat icon={<CalendarCheck size={14}/>} label="Bookings (7d)" v={stats.bookings_week || 0}/>
+              <Stat icon={<Mic size={14}/>} label="Voice min" v={stats.voice_minutes || 0}/>
+              <Stat icon={<Video size={14}/>} label="Videos" v={stats.videos_generated || 0}/>
+              <Stat icon={<PhoneCall size={14}/>} label="Calls" v={`${stats.live_calls || 0}/${stats.total_calls || 0}`}/>
             </div>
 
+            {/* AT-A-GLANCE CARDS */}
+            <div className="grid sm:grid-cols-3 gap-4" data-testid="admin-glance">
+              <GlanceCard icon={<Users size={18}/>} label="Active clients" value={`${stats.active_clients || 0}/${stats.total_clients || 0}`} cta="Manage clients" onClick={() => setSection("clients")} testId="glance-clients"/>
+              <GlanceCard icon={<Inbox size={18}/>} label="Waitlist signups" value={counts.waitlist} cta="View waitlist" onClick={() => setSection("waitlist")} testId="glance-waitlist"/>
+              <GlanceCard icon={<ClipboardList size={18}/>} label="Slot reservations" value={counts.reservations} cta="View reservations" onClick={() => setSection("reservations")} testId="glance-reservations"/>
+            </div>
+
+            {/* RECENT ACTIVITY + HEALTH SNAPSHOT */}
+            <div className="grid lg:grid-cols-2 gap-4">
+              <div className="bg-[#2D3748] border border-white/5 rounded-md p-6">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="font-display font-bold text-lg flex items-center gap-2"><Activity size={16} className="text-[#48BB78]"/>Recent bookings</h3>
+                  <button onClick={() => setSection("activity")} className="text-xs text-[#48BB78] hover:underline flex items-center gap-1">View all <ArrowRight size={12}/></button>
+                </div>
+                {((activity.bookings || []).length === 0) ? (
+                  <p className="text-sm text-[#A0AEC0]">No recent bookings.</p>
+                ) : (
+                  <ul className="space-y-2">
+                    {(activity.bookings || []).slice(0, 5).map((b, i) => (
+                      <li key={i} className="flex items-center justify-between bg-[#1A202C] rounded-md px-3 py-2 text-sm">
+                        <span className="truncate text-white/80">{b.customer_email || b.customer_name || "Guest"}</span>
+                        <span className="text-white/40 text-xs truncate ml-2">{b.slot || b.start_iso || ""}</span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+              <div className="bg-[#2D3748] border border-white/5 rounded-md p-6">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="font-display font-bold text-lg flex items-center gap-2"><Sliders size={16} className="text-[#48BB78]"/>System health</h3>
+                  <button onClick={() => setSection("settings")} className="text-xs text-[#48BB78] hover:underline flex items-center gap-1">Open settings <ArrowRight size={12}/></button>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <MiniHealth ok={health.emergent_llm} label="LLM"/>
+                  <MiniHealth ok={health.resend} label="Email (Resend)"/>
+                  <MiniHealth ok={health.telnyx_can_call || health.twilio_can_call} label="Voice / SMS"/>
+                  <MiniHealth ok={health.object_storage} label="Object storage"/>
+                </div>
+                <p className="text-[11px] text-[#A0AEC0] mt-3">Full health & keys live under Settings.</p>
+              </div>
+            </div>
+          </TabsContent>
+
+          {/* CLIENTS TABLE */}
+          <TabsContent value="clients" className="space-y-6" data-testid="admin-section-clients">
             {/* MANUAL ACCOUNT CREATOR */}
             <div className="bg-[#2D3748] rounded-md p-6 border border-white/5">
               <h3 className="font-display font-bold text-lg mb-4 flex items-center gap-2"><UserPlus size={18} className="text-[#48BB78]"/> Manual Account Creator</h3>
@@ -232,10 +237,7 @@ export default function Admin() {
                 </div>
               )}
             </div>
-          </TabsContent>
 
-          {/* CLIENTS TABLE */}
-          <TabsContent value="clients">
             <div className="bg-[#2D3748] rounded-md border border-white/5 overflow-hidden">
               <div className="p-4 border-b border-white/5 flex items-center justify-between">
                 <h3 className="font-display font-bold text-lg">Client Database ({users.length})</h3>
@@ -375,7 +377,43 @@ export default function Admin() {
             <ReservationsTab />
           </TabsContent>
 
-          <TabsContent value="settings" className="space-y-6">
+          <TabsContent value="settings" className="space-y-6" data-testid="admin-section-settings">
+            {/* INTEGRATION HEALTH */}
+            <div className="bg-[#2D3748] border border-white/5 rounded-md p-6">
+              <h3 className="font-display font-bold text-lg mb-4">Integration Health</h3>
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                <HealthCard testId="health-llm" ok={health.emergent_llm} label="Emergent LLM (GPT 5.6 Terra)" detail={health.emergent_llm ? "Connected" : "Missing key"}/>
+                <HealthCard testId="health-resend" ok={health.resend} label="Resend Emails" detail={health.resend ? "Sending live" : "Missing key"}/>
+                <HealthCard testId="health-ses" ok={health.ses} label="Amazon SES" detail={health.ses ? "Preferred sender" : "Add AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, SES_FROM_EMAIL"}/>
+                <HealthCard testId="health-telnyx" ok={health.telnyx_can_call} label="Telnyx Voice + SMS" detail={health.telnyx_can_call ? `From ${health.telnyx_phone}` : health.telnyx_configured ? "Key set - need TELNYX_PHONE_NUMBER" : "Not configured"}/>
+                <HealthCard testId="health-twilio" ok={health.twilio_can_call} label="Twilio (fallback)" detail={health.twilio_can_call ? `From ${health.twilio_from}` : health.twilio_configured ? "Need TWILIO_PHONE_NUMBER" : "Not configured"}/>
+                <HealthCard testId="health-google" ok={health.google_oauth} label="Google Calendar OAuth" detail={health.google_oauth ? "OAuth ready" : "Set GOOGLE_CLIENT_ID / SECRET"}/>
+                <HealthCard testId="health-fal" ok={health.fal_configured} label="Fal.ai Lip-Sync" detail={health.fal_configured ? "Key set (verify balance)" : "Missing FAL_KEY"}/>
+                <HealthCard testId="health-storage" ok={health.object_storage} label="Emergent Object Storage" detail={health.object_storage ? "Initialized" : "Init failed"}/>
+              </div>
+            </div>
+
+            {/* PLATFORM CONFIG */}
+            <div className="bg-[#2D3748] rounded-md p-6 border border-white/5 space-y-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="font-display font-bold text-lg mb-1">Toggle Public Signup Page</h3>
+                  <p className="text-sm text-[#A0AEC0]">When OFF, landing hides public registration &mdash; access only via manual login.</p>
+                </div>
+                <Switch data-testid="admin-signup-toggle" checked={signupEnabled} onCheckedChange={toggleSignup}/>
+              </div>
+              <div className="flex items-center justify-between border-t border-white/5 pt-4">
+                <div>
+                  <h3 className="font-display font-bold text-lg mb-1">File Upload Policy</h3>
+                  <p className="text-sm text-[#A0AEC0]">Who can upload knowledge base files. Admin-Only lets you gatekeep every tenant&apos;s files.</p>
+                </div>
+                <div className="flex gap-2" data-testid="upload-policy-group">
+                  <button data-testid="upload-policy-client" onClick={() => setUploadPolicy("client_self_serve")} className={`px-3 py-2 rounded-md text-xs font-bold ${uploadPolicy === "client_self_serve" ? "bg-[#48BB78] text-[#1A202C]" : "bg-[#1A202C] text-[#A0AEC0] border border-white/10"}`}>Client self-serve</button>
+                  <button data-testid="upload-policy-admin" onClick={() => setUploadPolicy("admin_only")} className={`px-3 py-2 rounded-md text-xs font-bold ${uploadPolicy === "admin_only" ? "bg-[#48BB78] text-[#1A202C]" : "bg-[#1A202C] text-[#A0AEC0] border border-white/10"}`}>Admin only</button>
+                </div>
+              </div>
+            </div>
+
             <PlatformKeysCard onSaved={load} />
             <div className="bg-[#2D3748] rounded-md p-6 border border-white/5">
               <h3 className="font-display font-bold text-lg mb-4">Env / Credentials Reference</h3>
@@ -395,8 +433,9 @@ export default function Admin() {
               <p className="text-3xl font-display font-black">{stats.total_files || 0} <span className="text-[#48BB78] text-base">files</span></p>
             </div>
           </TabsContent>
-        </Tabs>
-      </div>
+          </Tabs>
+        </div>
+      </main>
 
       {/* INSTRUCTION EDIT MODAL */}
       <Dialog open={!!instructionEdit} onOpenChange={(v) => !v && setInstructionEdit(null)}>
@@ -835,6 +874,136 @@ function ClientMetrics({ userId }) {
       <Stat icon={<Mic size={14}/>} label="Voice sec" v={m.voice_seconds || 0}/>
       <Stat icon={<Video size={14}/>} label="Videos" v={m.videos || 0}/>
       <Stat icon={<PhoneCall size={14}/>} label="Calls" v={m.calls || 0}/>
+    </div>
+  );
+}
+
+
+const ADMIN_NAV = [
+  { key: "dashboard", label: "Dashboard", icon: LayoutDashboard },
+  { key: "clients", label: "Clients", icon: Users, countKey: "clients" },
+  { key: "activity", label: "Activity", icon: Activity },
+  { key: "waitlist", label: "Waitlist", icon: Inbox, countKey: "waitlist" },
+  { key: "reservations", label: "Reservations", icon: ClipboardList, countKey: "reservations" },
+  { key: "audit", label: "Audit", icon: ScrollText },
+  { key: "settings", label: "Settings", icon: Settings },
+];
+
+function AdminSidebar({ section, setSection, counts, clientsCount, user, onLogout }) {
+  const badgeFor = (item) => {
+    if (item.countKey === "clients") return clientsCount;
+    if (item.countKey === "waitlist") return counts?.waitlist;
+    if (item.countKey === "reservations") return counts?.reservations;
+    return null;
+  };
+  return (
+    <aside className="hidden md:flex flex-col w-64 shrink-0 h-screen sticky top-0 border-r border-white/5 bg-[#0F141B]" data-testid="admin-sidebar">
+      <div className="px-5 pt-5 pb-4 border-b border-white/5">
+        <div className="flex items-center gap-2.5">
+          <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-[#48BB78] to-[#38A169] flex items-center justify-center text-[#0D1117] shadow-lg shadow-[#48BB78]/20"><KairoMark size={22}/></div>
+          <div>
+            <p className="font-display font-black text-[15px] leading-none">Kairo</p>
+            <p className="text-[10px] uppercase tracking-[0.2em] text-[#48BB78] font-bold mt-1 flex items-center gap-1"><Shield size={9}/> Admin Center</p>
+          </div>
+        </div>
+      </div>
+      <nav className="flex-1 overflow-y-auto py-4 px-3 space-y-1">
+        <p className="text-[10px] uppercase tracking-[0.2em] font-bold text-white/30 px-3 mb-2">Main Menu</p>
+        {ADMIN_NAV.map((item) => {
+          const Icon = item.icon;
+          const isActive = section === item.key;
+          const badge = badgeFor(item);
+          return (
+            <button
+              key={item.key}
+              data-testid={`admin-nav-${item.key}`}
+              onClick={() => setSection(item.key)}
+              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-[13.5px] font-medium transition-all group ${isActive ? "bg-[#48BB78]/10 text-[#48BB78] border border-[#48BB78]/25 shadow-inner" : "text-white/60 hover:text-white hover:bg-white/[0.04] border border-transparent"}`}
+            >
+              <Icon size={16} className={isActive ? "text-[#48BB78]" : "text-white/50 group-hover:text-white"}/>
+              <span className="flex-1 text-left">{item.label}</span>
+              {badge != null && badge > 0 && (
+                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-white/5 text-white/60 border border-white/10">{badge}</span>
+              )}
+            </button>
+          );
+        })}
+      </nav>
+      <div className="border-t border-white/5 p-3">
+        <div className="flex items-center gap-2.5 px-2 py-2 rounded-lg bg-white/[0.03]">
+          <div className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0" style={{ background: "linear-gradient(135deg,#48BB78,#38A169)" }}>
+            <Shield size={14} className="text-[#0D1117]"/>
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-white text-[12px] font-bold truncate">{user?.full_name || "Admin"}</p>
+            <p className="text-white/40 text-[10px] truncate">{user?.email}</p>
+          </div>
+          <button data-testid="admin-sidebar-logout" onClick={onLogout} title="Log out" className="w-8 h-8 rounded-md text-white/50 hover:text-white hover:bg-white/5 flex items-center justify-center">
+            <LogOut size={14}/>
+          </button>
+        </div>
+      </div>
+    </aside>
+  );
+}
+
+function ContextSwitcher({ users, onViewAs }) {
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button data-testid="admin-context-switcher" className="flex items-center gap-2 rounded-lg border border-white/10 bg-[#2D3748] px-3 py-2 text-sm hover:border-[#48BB78]/50 transition-colors">
+          <span className="w-6 h-6 rounded-md bg-[#48BB78]/15 border border-[#48BB78]/40 flex items-center justify-center text-[#48BB78]"><Shield size={13}/></span>
+          <span className="font-bold">Admin</span>
+          <span className="text-white/40 text-xs hidden sm:inline">· your workspace</span>
+          <ChevronDown size={14} className="text-white/50"/>
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" className="w-72 bg-[#1A202C] border-white/10 text-white">
+        <DropdownMenuLabel className="text-[#A0AEC0] text-[11px] uppercase tracking-widest">Switch workspace</DropdownMenuLabel>
+        <DropdownMenuItem data-testid="ctx-admin" className="focus:bg-[#48BB78]/10 focus:text-white cursor-default">
+          <Shield size={14} className="mr-2 text-[#48BB78]"/> Admin (you)
+          <CheckCircle2 size={14} className="ml-auto text-[#48BB78]"/>
+        </DropdownMenuItem>
+        <DropdownMenuSeparator className="bg-white/10"/>
+        <DropdownMenuLabel className="text-[#A0AEC0] text-[11px] uppercase tracking-widest">View as a client</DropdownMenuLabel>
+        <div className="max-h-64 overflow-y-auto">
+          {(!users || users.length === 0) ? (
+            <p className="px-2 py-2 text-xs text-white/40">No clients yet.</p>
+          ) : users.map((u) => (
+            <DropdownMenuItem key={u.id} data-testid={`ctx-client-${u.email}`} onClick={() => onViewAs(u)} className="focus:bg-[#48BB78]/10 focus:text-white cursor-pointer">
+              <Eye size={14} className="mr-2 text-[#ED8936]"/>
+              <div className="min-w-0">
+                <p className="truncate text-[13px]">{u.full_name || u.email}</p>
+                <p className="truncate text-[11px] text-white/40">{u.email}</p>
+              </div>
+            </DropdownMenuItem>
+          ))}
+        </div>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+function GlanceCard({ icon, label, value, cta, onClick, testId }) {
+  return (
+    <button data-testid={testId} onClick={onClick} className="text-left bg-[#2D3748] border border-white/5 rounded-xl p-5 hover:border-[#48BB78]/40 hover:-translate-y-0.5 transition-all group">
+      <div className="flex items-center justify-between mb-3">
+        <span className="w-9 h-9 rounded-lg bg-[#48BB78]/15 border border-[#48BB78]/30 flex items-center justify-center text-[#48BB78]">{icon}</span>
+        <ArrowRight size={16} className="text-white/30 group-hover:text-[#48BB78] group-hover:translate-x-0.5 transition-all"/>
+      </div>
+      <p className="text-3xl font-display font-black">{value}</p>
+      <p className="text-sm text-white/60 mt-0.5">{label}</p>
+      <p className="text-[11px] uppercase tracking-widest font-bold text-[#48BB78] mt-2">{cta}</p>
+    </button>
+  );
+}
+
+function MiniHealth({ ok, label }) {
+  return (
+    <div className={`flex items-center gap-2 rounded-lg px-3 py-2 border ${ok ? "bg-[#48BB78]/5 border-[#48BB78]/25" : "bg-red-500/5 border-red-500/25"}`}>
+      <span className={`w-2 h-2 rounded-full ${ok ? "bg-[#48BB78] shadow-[0_0_8px_rgba(72,187,120,0.7)]" : "bg-red-400"}`}/>
+      <span className="text-sm text-white/80">{label}</span>
+      <span className={`ml-auto text-[10px] font-bold uppercase tracking-widest ${ok ? "text-[#48BB78]" : "text-red-400"}`}>{ok ? "OK" : "Off"}</span>
     </div>
   );
 }

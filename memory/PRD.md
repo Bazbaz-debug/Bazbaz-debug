@@ -99,3 +99,10 @@ See `/app/memory/test_credentials.md`
 - ✅ **Answer Suggestions** — GET /api/me/training/suggestions scores weak replies + LLM (gpt-4o) drafts improved answers; Training tab "Scan for weak replies" → one-click Approve (creates a correction).
 - ✅ **Booking calendar** — GET /api/public/kairo-availability + POST /api/public/reserve + GET /api/admin/reservations. Landing reservation block has a mini day/slot calendar → reserve → Continue to Upwork (booking_url from platform calendar key); Admin has a Reservations tab.
 - ✅ Backend tested: 18/18 pass. Frontend visually verified (landing, admin keys, training). Automated frontend test pending user approval.
+
+## What's been implemented — 06 Aug 2026 (Admin panel redesign + password change)
+- ✅ **Admin password** changed to `Bigbaaz23` (ADMIN_PASSWORD in .env; startup keeps it in sync). Old password rejected (401), new returns admin JWT.
+- ✅ **Admin panel redesigned** (`pages/Admin.jsx`) from top-tabs to a **left main-menu sidebar** (AdminSidebar): Dashboard / Clients / Activity / Waitlist / Reservations / Audit / Settings, with live count badges (clients, waitlist, reservations). Master Admin user card + logout at bottom.
+- ✅ **Context switcher** in the top bar (`ContextSwitcher` dropdown): shows "Admin · your workspace" (current, ticked) and a "View as a client" list of every client → selecting one impersonates them (existing /admin/impersonate flow) and opens their dashboard. Lets the admin flip between the admin workspace and any client.
+- ✅ **Reorganised content:** Dashboard is the default landing with the hero, 6 KPI stats, 3 at-a-glance cards (active clients / waitlist / reservations, each clickable), recent-bookings preview and a system-health snapshot. **Manual Account Creator moved into Clients**; **Integration Health + signup toggle + upload policy moved into Settings** (alongside Platform Keys, env reference, storage).
+- ✅ Verified visually: login (new pw) → sidebar + dashboard, context switcher dropdown, Clients (creator + table), Settings (health + keys) all render, section switching works. Automated frontend UI test pending user approval.
