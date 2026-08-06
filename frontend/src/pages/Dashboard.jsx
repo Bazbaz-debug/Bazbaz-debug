@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
-import { Upload, Sparkles, CalendarDays, Palette, Bot, Link2, FileText, Copy, Check, Maximize2, CalendarClock, Video, Clock, Ban, Plus, Trash2, Image as ImageIcon, Settings2, Home, MessagesSquare, BookOpen, Send, User, Zap, Loader2, Activity, ShieldAlert, X, GraduationCap, KeyRound } from "lucide-react";
+import { Upload, Sparkles, CalendarDays, Palette, Bot, Link2, FileText, Copy, Check, Maximize2, CalendarClock, Video, Clock, Ban, Plus, Trash2, Image as ImageIcon, Settings2, Home, MessagesSquare, BookOpen, Send, User, Zap, Loader2, Activity, ShieldAlert, X, GraduationCap, KeyRound, Mail, Phone } from "lucide-react";
 import api, { API } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import Widget from "@/components/Widget";
@@ -481,10 +481,11 @@ function SettingsPanel({ user, updateField, refresh, colors }) {
   return (
     <div className="max-w-4xl">
       <Tabs defaultValue="branding" className="w-full">
-        <TabsList className="bg-[#141B24] border border-white/5 rounded-lg p-1 h-11 mb-6 w-full grid grid-cols-5">
+        <TabsList className="bg-[#141B24] border border-white/5 rounded-lg p-1 h-11 mb-6 w-full grid grid-cols-6">
           <TabsTrigger data-testid="settings-tab-branding" value="branding" className="data-[state=active]:bg-[#0D1117] data-[state=active]:text-[#48BB78] text-white/60"><Palette size={13} className="mr-1.5"/>Branding</TabsTrigger>
           <TabsTrigger data-testid="settings-tab-bot" value="bot" className="data-[state=active]:bg-[#0D1117] data-[state=active]:text-[#48BB78] text-white/60"><Bot size={13} className="mr-1.5"/>Bot Identity</TabsTrigger>
           <TabsTrigger data-testid="settings-tab-booking" value="booking" className="data-[state=active]:bg-[#0D1117] data-[state=active]:text-[#48BB78] text-white/60"><CalendarClock size={13} className="mr-1.5"/>Booking</TabsTrigger>
+          <TabsTrigger data-testid="settings-tab-keys" value="keys" className="data-[state=active]:bg-[#0D1117] data-[state=active]:text-[#48BB78] text-white/60"><KeyRound size={13} className="mr-1.5"/>My Keys</TabsTrigger>
           <TabsTrigger data-testid="settings-tab-integrations" value="integrations" className="data-[state=active]:bg-[#0D1117] data-[state=active]:text-[#48BB78] text-white/60"><Zap size={13} className="mr-1.5"/>Integrations</TabsTrigger>
           <TabsTrigger data-testid="settings-tab-training" value="training" className="data-[state=active]:bg-[#0D1117] data-[state=active]:text-[#48BB78] text-white/60"><GraduationCap size={13} className="mr-1.5"/>Training</TabsTrigger>
         </TabsList>
@@ -507,6 +508,10 @@ function SettingsPanel({ user, updateField, refresh, colors }) {
 
         <TabsContent value="booking" className="space-y-6">
           <BookingRulesPanel user={user} updateField={updateField}/>
+        </TabsContent>
+
+        <TabsContent value="keys" className="space-y-6">
+          <ClientKeysPanel/>
         </TabsContent>
 
         <TabsContent value="integrations" className="space-y-6">
@@ -558,6 +563,85 @@ function Card({ title, subtitle, children }) {
         {subtitle && <p className="text-xs text-[#A0AEC0] mt-0.5">{subtitle}</p>}
       </div>
       {children}
+    </div>
+  );
+}
+
+// ============ CLIENT KEYS (per-account, encrypted) ============
+const CK_ICONS = { mail: Mail, calendar: CalendarClock, "message-square": MessagesSquare, phone: Phone, sparkles: Sparkles };
+function ClientKeysPanel() {
+  const [categories, setCategories] = useState([]);
+  const [form, setForm] = useState({});
+  const [configured, setConfigured] = useState({});
+  const [saving, setSaving] = useState(false);
+  const hydrate = useCallback(async () => {
+    try {
+      const r = await api.get("/me/platform-keys");
+      const cats = r.data.categories || [];
+      setCategories(cats);
+      const f = {}; const c = {};
+      cats.forEach(cat => cat.fields.forEach(fl => { f[fl.key] = fl.secret ? "" : (fl.value || ""); c[fl.key] = fl.configured; }));
+      setForm(f); setConfigured(c);
+    } catch { /* ignore */ }
+  }, []);
+  useEffect(() => { hydrate(); }, [hydrate]);
+  const save = async () => {
+    setSaving(true);
+    try {
+      const values = {};
+      categories.forEach(cat => cat.fields.forEach(fl => {
+        const v = (form[fl.key] ?? "").trim();
+        if (fl.secret) { if (v) values[fl.key] = v; } else { values[fl.key] = v; }
+      }));
+      await api.put("/me/platform-keys", { values });
+      toast.success("Your keys were saved securely");
+      await hydrate();
+    } catch { toast.error("Could not save your keys"); }
+    finally { setSaving(false); }
+  };
+  return (
+    <div className="bg-[#141B24] border border-white/5 rounded-2xl p-6" data-testid="client-keys-panel">
+      <div className="mb-1 flex items-center gap-2">
+        <KeyRound size={16} className="text-[#48BB78]"/>
+        <h3 className="font-display font-bold text-white text-lg">My Keys &amp; Integrations</h3>
+      </div>
+      <p className="text-xs text-[#A0AEC0] mb-5">These belong to your account only — email, calendar, messaging, voice & chat. Secrets are encrypted and shown masked. Leave a secret blank to keep the current value.</p>
+      <div className="space-y-6">
+        {categories.map(cat => {
+          const Icon = CK_ICONS[cat.icon] || KeyRound;
+          return (
+            <div key={cat.category} data-testid={`ck-cat-${cat.category}`}>
+              <div className="flex items-center gap-2 mb-3 pb-2 border-b border-white/5">
+                <Icon size={15} className="text-[#48BB78]"/>
+                <h4 className="font-display font-bold text-sm text-white">{cat.label}</h4>
+              </div>
+              <div className="grid md:grid-cols-2 gap-3">
+                {cat.fields.map(fl => (
+                  <div key={fl.key}>
+                    <div className="flex items-center justify-between mb-1">
+                      <Label className="text-[11px] text-[#A0AEC0] font-bold uppercase tracking-widest">{fl.label}</Label>
+                      {fl.secret && configured[fl.key] && (
+                        <span data-testid={`ck-configured-${fl.key}`} className="inline-flex items-center gap-1 text-[9px] font-black uppercase tracking-widest px-1.5 py-0.5 rounded-full bg-[#48BB78] text-[#0D1117]"><Check size={9} strokeWidth={3}/> {fl.value || "Set"}</span>
+                      )}
+                    </div>
+                    <Input
+                      data-testid={`ck-input-${fl.key}`}
+                      type={fl.secret ? "password" : "text"}
+                      value={form[fl.key] ?? ""}
+                      onChange={e => setForm(s => ({ ...s, [fl.key]: e.target.value }))}
+                      placeholder={fl.secret && configured[fl.key] ? "•••• enter new to replace" : fl.placeholder}
+                      className={`bg-[#0D1117] border-white/10 text-white h-10 mt-0.5 text-sm ${fl.secret ? "font-mono text-xs" : ""}`}
+                    />
+                  </div>
+                ))}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      <Button data-testid="client-keys-save" onClick={save} disabled={saving} className="mt-6 bg-[#48BB78] hover:bg-[#38A169] text-[#1A202C] hover:text-white font-bold rounded-md">
+        {saving ? "Saving…" : "Save my keys"}
+      </Button>
     </div>
   );
 }

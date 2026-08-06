@@ -2342,7 +2342,87 @@ async def save_platform_keys(req: PlatformKeysReq, admin=Depends(require_admin))
         await log_audit(admin, "platform_keys.update", "platform", {"fields": saved_fields})
     return {"ok": True, "saved": saved_fields}
 
-# ============= WAITLIST (public capture + admin view) =============
+# ============= PER-CLIENT KEYS (each client manages their OWN, isolated & encrypted) =============
+# Stored on the user doc under `client_keys.<field>`. Secrets are Fernet-encrypted; plain values as-is.
+CLIENT_KEY_SPECS = [
+    {"category": "email", "label": "Email Delivery", "icon": "mail",
+     "fields": [
+         {"key": "resend_api_key", "label": "Resend API Key", "secret": True, "placeholder": "re_..."},
+         {"key": "sender_email", "label": "Sender Email (verified)", "secret": False, "placeholder": "you@yourdomain.com"},
+     ]},
+    {"category": "calendar", "label": "Calendar & Booking", "icon": "calendar",
+     "fields": [
+         {"key": "calendly_url", "label": "Calendly URL", "secret": False, "placeholder": "https://calendly.com/..."},
+         {"key": "zoom_link", "label": "Zoom Meeting Link", "secret": False, "placeholder": "https://zoom.us/j/..."},
+         {"key": "google_api_key", "label": "Google Calendar API Key", "secret": True, "placeholder": "AIza..."},
+     ]},
+    {"category": "messaging", "label": "Messaging / SMS", "icon": "message-square",
+     "fields": [
+         {"key": "telnyx_api_key", "label": "Telnyx API Key", "secret": True, "placeholder": "KEY..."},
+         {"key": "telnyx_phone_number", "label": "SMS Phone Number", "secret": False, "placeholder": "+1..."},
+     ]},
+    {"category": "voice", "label": "Voice", "icon": "phone",
+     "fields": [
+         {"key": "voice_api_key", "label": "Voice Provider Key", "secret": True, "placeholder": "optional"},
+     ]},
+    {"category": "chat", "label": "Chat / LLM", "icon": "sparkles",
+     "fields": [
+         {"key": "llm_api_key", "label": "LLM API Key", "secret": True, "placeholder": "sk-..."},
+     ]},
+]
+_CLIENT_FIELD_INDEX = {f["key"]: f for cat in CLIENT_KEY_SPECS for f in cat["fields"]}
+
+def client_key_value(ck: dict, key: str) -> str:
+    spec = _CLIENT_FIELD_INDEX.get(key)
+    raw = (ck or {}).get(key, "")
+    if not raw:
+        return ""
+    if spec and spec.get("secret"):
+        return decrypt_secret(raw)
+    return raw
+
+@api_router.get("/me/platform-keys")
+async def get_my_keys(user=Depends(get_current_user)):
+    ck = user.get("client_keys") or {}
+    categories = []
+    for cat in CLIENT_KEY_SPECS:
+        fields_out = []
+        for f in cat["fields"]:
+            plain = client_key_value(ck, f["key"])
+            fields_out.append({
+                "key": f["key"], "label": f["label"], "secret": f.get("secret", False),
+                "placeholder": f.get("placeholder", ""),
+                "configured": bool(plain),
+                "value": mask_secret(plain) if f.get("secret") else plain,
+            })
+        categories.append({"category": cat["category"], "label": cat["label"], "icon": cat["icon"], "fields": fields_out})
+    return {"categories": categories}
+
+@api_router.put("/me/platform-keys")
+async def save_my_keys(req: PlatformKeysReq, user=Depends(get_current_user)):
+    incoming = dict(req.values or {})
+    updates = {}
+    saved = []
+    for key, val in incoming.items():
+        spec = _CLIENT_FIELD_INDEX.get(key)
+        if spec is None or val is None:
+            continue
+        val = str(val).strip()
+        if spec.get("secret") and val.startswith("••••"):
+            continue  # unchanged masked value
+        if spec.get("secret"):
+            if val == "":
+                continue  # don't wipe a secret on empty
+            updates[f"client_keys.{key}"] = encrypt_secret(val)
+        else:
+            updates[f"client_keys.{key}"] = val
+        saved.append(key)
+    if updates:
+        await db.users.update_one({"id": user["id"]}, {"$set": updates})
+        await log_audit(user, "client_keys.update", user.get("email", ""), {"fields": saved})
+    return {"ok": True, "saved": saved}
+
+
 class WaitlistReq(BaseModel):
     email: EmailStr
     name: Optional[str] = ""

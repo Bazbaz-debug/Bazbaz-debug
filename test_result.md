@@ -108,6 +108,56 @@ user_problem_statement: |
   info, and per-client keys (email, Google email, Zoom meeting link, etc.).
 
 backend:
+  - task: "Per-client keys (GET/PUT /api/me/platform-keys) — isolated & encrypted per account"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: |
+          Each client now manages their OWN keys, stored on their user doc under
+          `client_keys.<field>` (secrets Fernet-encrypted, plain values as-is), across
+          categories email/calendar/messaging/voice/chat (CLIENT_KEY_SPECS). GET
+          /api/me/platform-keys returns categories with masked secrets + configured flags;
+          PUT accepts {values:{field:val}}, encrypts secrets, skips masked (••••) values so
+          they aren't wiped, skips empty secrets. Requires client JWT. Isolation: keys are
+          keyed to the authenticated user's id, so client A never sees client B's keys.
+          Admin retains full control (own platform-keys + per-client Manage modal + View As).
+      - working: true
+        agent: "testing"
+        comment: |
+          ✅ ALL TESTS PASSED (7/7) - Per-client keys endpoints fully functional
+          
+          Test Results:
+          1. GET /api/me/platform-keys (demo client) → 200 with 5 categories (email, calendar, 
+             messaging, voice, chat). Each category has fields with key/label/secret/configured/value ✓
+          2. PUT /api/me/platform-keys (demo client) with 5 test values (resend_api_key, sender_email, 
+             telnyx_api_key, telnyx_phone_number, llm_api_key) → {ok:true, saved:5} ✓
+          3. GET /api/me/platform-keys (demo client) again → All secrets properly masked (resend_api_key, 
+             telnyx_api_key, llm_api_key start with ••••), plain values correct (sender_email="owner@demoshop.com", 
+             telnyx_phone_number="+15551230000"), all configured=true ✓
+          4. Idempotent masked PUT → Re-PUT with masked value (••••) does NOT wipe secret, 
+             configured still true ✓
+          5. Auth enforcement → GET/PUT /api/me/platform-keys with NO token → 401 (both endpoints) ✓
+          6. Isolation → Created second client (isotest@example.com) as admin, logged in with temp password, 
+             GET /api/me/platform-keys shows all secrets (resend_api_key, telnyx_api_key, llm_api_key) 
+             configured=false (does NOT see demo client's keys) ✓
+          7. Demo client keys intact → GET /api/me/platform-keys (demo client) after isolation test → 
+             resend_api_key still configured=true (keys not affected by other client) ✓
+          
+          Key outcomes verified:
+          • Per-client keys save & mask correctly (secrets encrypted with Fernet, masked with ••••last4)
+          • Masked re-PUT doesn't wipe secrets (idempotent behavior)
+          • Auth enforced (401 without token)
+          • Keys are isolated between clients (demo client vs isotest client have separate key stores)
+          • Secrets NEVER returned in plaintext (all secrets masked in GET responses)
+          
+          All requirements from review request met. Per-client keys system working correctly.
+
   - task: "Admin login not hanging (startup no longer blocks on avatar generation)"
     implemented: true
     working: true
@@ -524,8 +574,8 @@ frontend:
 
 metadata:
   created_by: "main_agent"
-  version: "1.5"
-  test_sequence: 5
+  version: "1.6"
+  test_sequence: 6
   run_ui: false
 
 test_plan:
@@ -694,3 +744,58 @@ agent_communication:
       The bug fix is working correctly. Admin login is fully functional, secure, and does NOT 
       hang after backend restart. Avatar generation now runs asynchronously in the background 
       as intended, allowing auth endpoints to be served immediately.
+
+  - agent: "testing"
+    message: |
+      ✅ PER-CLIENT KEYS ENDPOINTS VERIFIED - ALL TESTS PASSED (7/7)
+      
+      Tested the new per-client keys endpoints (GET/PUT /api/me/platform-keys) with comprehensive 
+      scenarios covering functionality, security, masking, idempotency, and isolation.
+      
+      TEST RESULTS:
+      
+      1. GET /api/me/platform-keys (demo client) ✓
+         • Returns 200 with 5 categories: email, calendar, messaging, voice, chat
+         • Each field has required structure: key, label, secret, configured, value
+      
+      2. PUT /api/me/platform-keys (demo client) ✓
+         • Saved 5 test values: resend_api_key, sender_email, telnyx_api_key, 
+           telnyx_phone_number, llm_api_key
+         • Returns {ok:true, saved:[...]} with all 5 fields
+      
+      3. GET /api/me/platform-keys (verify masking) ✓
+         • Secrets properly masked: resend_api_key, telnyx_api_key, llm_api_key all start with ••••
+         • Plain values correct: sender_email="owner@demoshop.com", telnyx_phone_number="+15551230000"
+         • All fields show configured=true
+         • Secrets NEVER returned in plaintext
+      
+      4. Idempotent masked PUT ✓
+         • Re-PUT with masked value (••••) does NOT wipe the stored secret
+         • GET after masked PUT still shows configured=true
+         • Prevents accidental secret deletion
+      
+      5. Auth enforcement ✓
+         • GET /api/me/platform-keys with NO token → 401
+         • PUT /api/me/platform-keys with NO token → 401
+         • Both endpoints properly require authentication
+      
+      6. Isolation (multi-client test) ✓
+         • Created second client (isotest@example.com) as admin
+         • Logged in with temporary password
+         • GET /api/me/platform-keys (isotest) shows all secrets configured=false
+         • New client does NOT see demo client's keys (proper isolation)
+      
+      7. Demo client keys intact ✓
+         • After isolation test, demo client's keys still present
+         • resend_api_key still configured=true
+         • Keys not affected by other client operations
+      
+      KEY OUTCOMES VERIFIED:
+      • Per-client keys save & mask correctly (Fernet encryption, ••••last4 masking)
+      • Masked re-PUT doesn't wipe secrets (idempotent behavior)
+      • Auth enforced (401 without token)
+      • Keys are isolated per account (client A never sees client B's keys)
+      • Secrets NEVER returned in plaintext
+      
+      All requirements from review request met. Per-client keys system fully functional and secure.
+      Backend testing complete. Ready for main agent to summarize and finish.
