@@ -635,8 +635,9 @@ async def _generate_avatars():
                         logger.info(f"fal.ai generated {g} avatar")
             except Exception as e:
                 logger.warning(f"fal.ai avatar gen failed for {g}: {e}")
-        # Fallback #1: OpenAI gpt-image-1 (works with Emergent LLM key)
-        if not image_bytes and EMERGENT_LLM_KEY:
+        # Fallback #1: OpenAI gpt-image-1 — DISABLED to conserve the shared LLM budget
+        # (image generation is expensive and was exhausting the key). Using free dicebear below.
+        if False and not image_bytes and EMERGENT_LLM_KEY:
             try:
                 gen = OpenAIImageGeneration(api_key=EMERGENT_LLM_KEY)
                 imgs = await gen.generate_images(prompt=prompt, model="gpt-image-1", number_of_images=1, quality="low")
@@ -1178,7 +1179,7 @@ async def chat_stream(req: ChatReq):
                 + "\n".join(convo_lines)
             )
 
-    chat = LlmChat(api_key=EMERGENT_LLM_KEY, session_id=req.session_id, system_message=system).with_model("openai", "gpt-4o")
+    chat = LlmChat(api_key=EMERGENT_LLM_KEY, session_id=req.session_id, system_message=system).with_model("openai", "gpt-4o-mini")
 
     # increment chats counter
     if tenant_id:

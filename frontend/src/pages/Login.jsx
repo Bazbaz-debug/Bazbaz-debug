@@ -6,7 +6,7 @@ import { useAuth } from "@/context/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { KairoMark } from "@/components/KairoLogo";
+import { KairoMark, KairoLuxeLogo } from "@/components/KairoLogo";
 
 function RotatingWord({ words }) {
   const [i, setI] = useState(0);
@@ -49,12 +49,11 @@ export default function Login() {
     <div className="min-h-screen grid lg:grid-cols-2">
       <div className="hidden lg:flex flex-col justify-between p-12 bg-[#0D1117] relative dot-grid noise overflow-hidden isolate">
         <div className="absolute inset-0 -z-10 pointer-events-none overflow-hidden" aria-hidden="true"><div className="aurora" /></div>
-        <Link to="/" className="flex items-center gap-2 relative z-10">
-          <div className="w-9 h-9 rounded-md bg-[#48BB78] flex items-center justify-center text-[#1A202C]"><KairoMark size={22}/></div>
-          <span className="font-display font-black text-xl">Kairo</span>
+        <Link to="/" className="relative z-10" data-testid="login-luxe-logo">
+          <KairoLuxeLogo />
         </Link>
         <div className="relative z-10 max-w-md">
-          <p className="uppercase text-xs tracking-[0.3em] text-[#48BB78] font-bold mb-3">Neon-Green Console</p>
+          <p className="uppercase text-xs tracking-[0.3em] text-[#48BB78] font-bold mb-3">Private &amp; Exclusive</p>
           <h1 className="font-display font-black text-5xl leading-none tracking-tighter mb-4">Log in to&nbsp;<RotatingWord words={["convert.", "book.", "automate.", "grow.", "ship."]} /></h1>
           <p className="text-[#A0AEC0]">Your embeddable AI concierge is waiting on the other side.</p>
         </div>

@@ -308,8 +308,8 @@ export default function LandingPage() {
               <h3 className="font-display font-black text-2xl md:text-3xl tracking-tight mb-3">You run a store and just need a fix.</h3>
               <p className="text-white/55 text-sm md:text-base max-w-lg leading-relaxed">Visitors bounce with questions unanswered. Drop in one line of code and Kairo handles sizing, shipping, returns and order tracking — recovering the sales you were quietly losing.</p>
             </div>
-            <div className="img-frame mt-6 h-56">
-              <img src={IMG_ECOM} alt="Modern e-commerce store" className="w-full h-full object-cover" loading="lazy" />
+            <div className="mt-6 rounded-2xl overflow-hidden border border-white/10 bg-[#0B1016] shadow-[0_30px_70px_-30px_rgba(0,0,0,0.7)]">
+              <img src={IMG_ECOM} alt="Modern online store" className="w-full h-auto block" loading="lazy" />
             </div>
           </div>
           {/* Medium card — ads */}
