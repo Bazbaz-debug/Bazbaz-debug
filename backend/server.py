@@ -545,58 +545,8 @@ class SettingsToggle(BaseModel):
 @app.on_event("startup")
 async def startup():
     init_storage()
-    # Cache AI-generated portrait faces. Try fal.ai flux (photorealistic) first, fall back to dicebear SVG.
-    prompts = {
-        "male": "professional realistic photo of a friendly male AI concierge in his 30s, neutral background, soft studio lighting, clean look, portrait, high detail",
-        "female": "professional realistic photo of a friendly female AI concierge in her 30s, neutral background, soft studio lighting, clean look, portrait, high detail",
-        "neutral": "professional realistic photo of an androgynous AI concierge in their 30s, neutral background, soft studio lighting, clean look, portrait, high detail",
-    }
-    for g, prompt in prompts.items():
-        image_bytes = None
-        # Try fal.ai flux/schnell for realistic faces
-        if FAL_KEY:
-            try:
-                result = await asyncio.to_thread(
-                    lambda p=prompt: fal_client.subscribe(
-                        "fal-ai/flux/schnell",
-                        arguments={"prompt": p, "image_size": "portrait_4_3", "num_inference_steps": 4},
-                        with_logs=False,
-                    )
-                )
-                img_url = None
-                if isinstance(result, dict):
-                    images = result.get("images") or []
-                    if images and isinstance(images[0], dict):
-                        img_url = images[0].get("url")
-                if img_url:
-                    r = await asyncio.to_thread(lambda: requests.get(img_url, timeout=15))
-                    if r.status_code == 200 and len(r.content) > 1000:
-                        image_bytes = r.content
-                        logger.info(f"fal.ai generated {g} avatar")
-            except Exception as e:
-                logger.warning(f"fal.ai avatar gen failed for {g}: {e}")
-        # Fallback #1: OpenAI gpt-image-1 (works with Emergent LLM key)
-        if not image_bytes and EMERGENT_LLM_KEY:
-            try:
-                gen = OpenAIImageGeneration(api_key=EMERGENT_LLM_KEY)
-                imgs = await gen.generate_images(prompt=prompt, model="gpt-image-1", number_of_images=1, quality="low")
-                if imgs and len(imgs[0]) > 1000:
-                    image_bytes = imgs[0]
-                    logger.info(f"OpenAI gpt-image-1 generated {g} avatar")
-            except Exception as e:
-                logger.warning(f"OpenAI gpt-image-1 failed for {g}: {e}")
-        if image_bytes:
-            _avatar_cache[g] = ("image/png", image_bytes)
-        else:
-            # Fallback #2: dicebear SVG (stable illustrated fallback)
-            seed = {"male": "Concierge-Aiden", "female": "Concierge-Aria", "neutral": "Concierge-Nova"}[g]
-            try:
-                r = await asyncio.to_thread(lambda s=seed: requests.get(f"https://api.dicebear.com/9.x/personas/svg?seed={s}&backgroundColor=1A202C,2D3748&size=400", timeout=8))
-                if r.status_code == 200:
-                    _avatar_cache[g] = ("image/svg+xml", r.content)
-                    logger.info(f"dicebear fallback for {g} avatar")
-            except Exception as e:
-                logger.warning(f"dicebear fallback failed for {g}: {e}")
+    # Concierge avatar portraits are generated in the BACKGROUND (see _generate_avatars)
+    # so startup — and therefore admin/client login — is never blocked waiting on image APIs.
     if not await db.users.find_one({"email": ADMIN_EMAIL}):
         await db.users.insert_one({
             "id": str(uuid.uuid4()),
@@ -648,7 +598,66 @@ async def startup():
     if not await db.settings.find_one({"id": "app_settings"}):
         await db.settings.insert_one({"id": "app_settings", "public_signup_enabled": True, "upload_policy": "client_self_serve"})
     await load_platform_email()
+    # Kick off avatar portrait generation without blocking startup / login.
+    asyncio.create_task(_generate_avatars())
     logger.info("Startup complete")
+
+async def _generate_avatars():
+    """Generate & cache concierge portrait faces in the background.
+    Tries fal.ai flux (photorealistic) → OpenAI gpt-image-1 → dicebear SVG fallback.
+    Runs off the startup critical path so auth is never blocked."""
+    prompts = {
+        "male": "professional realistic photo of a friendly male AI concierge in his 30s, neutral background, soft studio lighting, clean look, portrait, high detail",
+        "female": "professional realistic photo of a friendly female AI concierge in her 30s, neutral background, soft studio lighting, clean look, portrait, high detail",
+        "neutral": "professional realistic photo of an androgynous AI concierge in their 30s, neutral background, soft studio lighting, clean look, portrait, high detail",
+    }
+    for g, prompt in prompts.items():
+        image_bytes = None
+        # Try fal.ai flux/schnell for realistic faces
+        if FAL_KEY:
+            try:
+                result = await asyncio.to_thread(
+                    lambda p=prompt: fal_client.subscribe(
+                        "fal-ai/flux/schnell",
+                        arguments={"prompt": p, "image_size": "portrait_4_3", "num_inference_steps": 4},
+                        with_logs=False,
+                    )
+                )
+                img_url = None
+                if isinstance(result, dict):
+                    images = result.get("images") or []
+                    if images and isinstance(images[0], dict):
+                        img_url = images[0].get("url")
+                if img_url:
+                    r = await asyncio.to_thread(lambda: requests.get(img_url, timeout=15))
+                    if r.status_code == 200 and len(r.content) > 1000:
+                        image_bytes = r.content
+                        logger.info(f"fal.ai generated {g} avatar")
+            except Exception as e:
+                logger.warning(f"fal.ai avatar gen failed for {g}: {e}")
+        # Fallback #1: OpenAI gpt-image-1 (works with Emergent LLM key)
+        if not image_bytes and EMERGENT_LLM_KEY:
+            try:
+                gen = OpenAIImageGeneration(api_key=EMERGENT_LLM_KEY)
+                imgs = await gen.generate_images(prompt=prompt, model="gpt-image-1", number_of_images=1, quality="low")
+                if imgs and len(imgs[0]) > 1000:
+                    image_bytes = imgs[0]
+                    logger.info(f"OpenAI gpt-image-1 generated {g} avatar")
+            except Exception as e:
+                logger.warning(f"OpenAI gpt-image-1 failed for {g}: {e}")
+        if image_bytes:
+            _avatar_cache[g] = ("image/png", image_bytes)
+        else:
+            # Fallback #2: dicebear SVG (stable illustrated fallback)
+            seed = {"male": "Concierge-Aiden", "female": "Concierge-Aria", "neutral": "Concierge-Nova"}[g]
+            try:
+                r = await asyncio.to_thread(lambda s=seed: requests.get(f"https://api.dicebear.com/9.x/personas/svg?seed={s}&backgroundColor=1A202C,2D3748&size=400", timeout=8))
+                if r.status_code == 200:
+                    _avatar_cache[g] = ("image/svg+xml", r.content)
+                    logger.info(f"dicebear fallback for {g} avatar")
+            except Exception as e:
+                logger.warning(f"dicebear fallback failed for {g}: {e}")
+    logger.info("Avatar generation finished")
 
 @app.on_event("shutdown")
 async def shutdown():
