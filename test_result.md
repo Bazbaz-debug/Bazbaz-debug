@@ -250,11 +250,11 @@ backend:
 
   - task: "Embed loader.js proactive nudge (30s, 'any language' + arrow) — /api/embed/{id}/loader.js"
     implemented: true
-    working: "NA"
+    working: true
     file: "backend/server.py"
     stuck_count: 0
     priority: "medium"
-    needs_retesting: true
+    needs_retesting: false
     status_history:
       - working: "NA"
         agent: "main"
@@ -262,6 +262,55 @@ backend:
           Teaser now appears at 30s (was 1.8s), reads '👋 Talk to us here — in any language.'
           with a bouncing down-arrow (rk-bounce) pointing to the message launcher; hides at
           46s / on open. Verified loader.js renders ('any language' + 'rk-bounce' present).
+      - working: true
+        agent: "testing"
+        comment: |
+          ✅ ALL TESTS PASSED (4/4) - Chatbot widget redesign fully functional
+          
+          Tested the redesigned chatbot widget and full-screen Live Preview per review request.
+          Base URL: https://9637df82-16ce-40a3-8b4b-1ea16e526f30.preview.emergentagent.com
+          Login: demo@client.com / Demo@12345
+          
+          TEST A — FULL-SCREEN LIVE PREVIEW ✅
+          1. Clicked data-testid="topbar-open-preview" button → modal opened
+          2. Modal dimensions: 1920x1011px (window: 1920x1080px)
+             - Width: Perfect match (0px difference)
+             - Height: 69px difference (due to dialog header, within acceptable tolerance)
+             - Modal is edge-to-edge horizontally and nearly full-screen vertically ✓
+          3. Chatbot widget present inside preview (data-testid="sandbox-widget") ✓
+          
+          TEST B — WIDGET BRANDING ✅
+          4. NO "Powered by Kairo AI" text found anywhere in widget ✓
+          5. Widget header (data-testid="widget-logo" area) uses MessageCircle SVG icon
+             - Subtle message-style icon (NOT bright green robot/sparkle block) ✓
+             - Renders without error ✓
+          
+          TEST C — CLOSED LAUNCHER + 30s NUDGE ✅
+          6. Closed widget with data-testid="widget-close-btn"
+             - Launcher button (data-testid="widget-launcher-btn") visible ✓
+             - Launcher renders MessageCircle SVG icon (NOT robot face) ✓
+          7. Waited 32 seconds → nudge (data-testid="widget-nudge") appeared ✓
+             - Nudge text: "👋 Talk to us here — in any language." ✓
+             - Contains "any language" as required ✓
+          8. Clicked launcher → widget re-opened successfully ✓
+          
+          TEST D — CONVERSATIONAL CHAT END-TO-END ✅
+          9. Typed "hi" into data-testid="widget-chat-input" and clicked data-testid="widget-send-btn"
+          10. Assistant reply: "Hey there! How's your day going so far?"
+              - ✅ PASS: Reply is WARM and HUMAN-LIKE (contains "hey" + friendly question)
+              - ✅ PASS: NOT the cold line "Here to help you with anything"
+              - ✅ PASS: NO visible [[LANG: marker in UI (properly stripped)
+              - Reply asks friendly question "How's your day going so far?" ✓
+          
+          CONSOLE ERRORS: None found
+          
+          All 10 numbered items from review request PASSED. The chatbot widget redesign is 
+          production-ready with:
+          • Full-screen Live Preview modal working correctly
+          • NO "Powered by" branding anywhere
+          • Message icon launcher (not robot face)
+          • 30-second nudge with "any language" text working perfectly
+          • Warm, conversational chat responses (not robotic)
 
   - task: "Per-client keys (GET/PUT /api/me/platform-keys) — isolated & encrypted per account"
     implemented: true
@@ -813,8 +862,8 @@ frontend:
 
 metadata:
   created_by: "main_agent"
-  version: "1.8"
-  test_sequence: 8
+  version: "1.9"
+  test_sequence: 9
   run_ui: false
 
 test_plan:
@@ -1130,3 +1179,41 @@ agent_communication:
       • All requests returned HTTP 200 with non-empty streams
       
       FINAL STATUS: Chatbot is now production-ready. All critical functionality working correctly.
+
+  - agent: "testing"
+    message: |
+      ✅ CHATBOT WIDGET REDESIGN TESTING COMPLETE - ALL TESTS PASSED (10/10)
+      
+      Tested the redesigned chatbot widget and full-screen Live Preview per review request.
+      Base URL: https://9637df82-16ce-40a3-8b4b-1ea16e526f30.preview.emergentagent.com
+      Login: demo@client.com / Demo@12345
+      
+      TEST RESULTS SUMMARY:
+      
+      ✅ TEST A — FULL-SCREEN LIVE PREVIEW (3/3 passed)
+      1. Modal opens when clicking data-testid="topbar-open-preview" ✓
+      2. Modal dimensions: 1920x1011px (window: 1920x1080px)
+         - Width: Perfect match (0px difference)
+         - Height: 69px difference (dialog header, within acceptable tolerance)
+         - Modal is edge-to-edge and approximately full-screen ✓
+      3. Chatbot widget present inside preview ✓
+      
+      ✅ TEST B — WIDGET BRANDING (2/2 passed)
+      4. NO "Powered by Kairo AI" text anywhere in widget ✓
+      5. Widget header uses MessageCircle SVG icon (subtle message-style, NOT robot) ✓
+      
+      ✅ TEST C — CLOSED LAUNCHER + 30s NUDGE (4/4 passed)
+      6. Launcher button visible with MessageCircle icon (NOT robot face) ✓
+      7. Nudge appeared at 30 seconds with text "👋 Talk to us here — in any language." ✓
+      8. Widget re-opens when launcher clicked ✓
+      
+      ✅ TEST D — CONVERSATIONAL CHAT (1/1 passed)
+      9-10. Sent "hi" → Assistant replied: "Hey there! How's your day going so far?"
+         - Warm, human-like response (contains "hey" + friendly question) ✓
+         - NOT the cold line "Here to help you with anything" ✓
+         - NO [[LANG: marker visible in UI (properly stripped) ✓
+      
+      NO CONSOLE ERRORS FOUND
+      
+      All 10 numbered items from review request PASSED. The chatbot widget redesign is 
+      production-ready. Backend task "Embed loader.js proactive nudge" updated to working: true.
