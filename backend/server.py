@@ -2225,16 +2225,77 @@ async def admin_impersonate(user_id: str, admin=Depends(require_admin)):
     await log_audit(admin, "impersonate.start", target.get("email"), {"target_id": user_id})
     return {"token": token, "user": {"id": target["id"], "email": target["email"], "role": target.get("role", "client"), "full_name": target.get("full_name")}}
 
-# ============= PLATFORM KEYS (admin — e.g. Resend email) =============
+# ============= PLATFORM KEYS (admin — centralized: email / calendar / messaging / voice / chat) =============
+# Each field: secret=True -> stored encrypted under "{key}_enc" and masked on readback.
+#             secret=False -> stored as plaintext under "{key}".
+PLATFORM_KEY_SPECS = [
+    {"category": "email", "label": "Email Delivery (Resend)", "icon": "mail",
+     "fields": [
+         {"key": "resend_api_key", "label": "Resend API Key", "secret": True, "placeholder": "re_..."},
+         {"key": "sender_email", "label": "Sender Email (verified)", "secret": False, "placeholder": "hello@yourdomain.com"},
+     ]},
+    {"category": "calendar", "label": "Calendar & Booking", "icon": "calendar",
+     "fields": [
+         {"key": "booking_url", "label": "Upwork / Booking URL", "secret": False, "placeholder": "https://www.upwork.com/..."},
+         {"key": "calendly_url", "label": "Calendly URL", "secret": False, "placeholder": "https://calendly.com/..."},
+         {"key": "zoom_link", "label": "Default Zoom Link", "secret": False, "placeholder": "https://zoom.us/j/..."},
+         {"key": "google_calendar_api_key", "label": "Google Calendar API Key", "secret": True, "placeholder": "AIza..."},
+     ]},
+    {"category": "messaging", "label": "Messaging / SMS (Telnyx)", "icon": "message-square",
+     "fields": [
+         {"key": "telnyx_api_key", "label": "Telnyx API Key", "secret": True, "placeholder": "KEY..."},
+         {"key": "telnyx_phone_number", "label": "Telnyx Phone Number", "secret": False, "placeholder": "+1..."},
+     ]},
+    {"category": "voice", "label": "Voice", "icon": "phone",
+     "fields": [
+         {"key": "voice_api_key", "label": "Voice Provider Key", "secret": True, "placeholder": "optional"},
+         {"key": "twilio_account_sid", "label": "Twilio Account SID", "secret": False, "placeholder": "AC..."},
+         {"key": "twilio_auth_token", "label": "Twilio Auth Token", "secret": True, "placeholder": "optional"},
+     ]},
+    {"category": "chat", "label": "Chat / LLM", "icon": "sparkles",
+     "fields": [
+         {"key": "llm_api_key", "label": "LLM API Key (falls back to platform key)", "secret": True, "placeholder": "sk-..."},
+     ]},
+]
+_FIELD_INDEX = {f["key"]: f for cat in PLATFORM_KEY_SPECS for f in cat["fields"]}
+
 class PlatformKeysReq(BaseModel):
+    # Generic: {"values": {"resend_api_key": "...", "sender_email": "..."}}
+    values: dict = {}
+    # Back-compat single-field keys
     resend_api_key: Optional[str] = None
     sender_email: Optional[str] = None
+
+def platform_key_value(settings: dict, key: str) -> str:
+    """Return the plaintext value of a platform key from a settings doc."""
+    spec = _FIELD_INDEX.get(key)
+    if not spec:
+        return settings.get(key, "") or ""
+    if spec.get("secret"):
+        enc = settings.get(f"{key}_enc", "")
+        return decrypt_secret(enc) if enc else ""
+    return settings.get(key, "") or ""
 
 @api_router.get("/admin/platform-keys")
 async def get_platform_keys(admin=Depends(require_admin)):
     s = await db.settings.find_one({"id": "app_settings"}, {"_id": 0}) or {}
-    resend_plain = decrypt_secret(s.get("resend_api_key_enc", "")) if s.get("resend_api_key_enc") else ""
+    categories = []
+    for cat in PLATFORM_KEY_SPECS:
+        fields_out = []
+        for f in cat["fields"]:
+            plain = platform_key_value(s, f["key"])
+            fields_out.append({
+                "key": f["key"], "label": f["label"], "secret": f.get("secret", False),
+                "placeholder": f.get("placeholder", ""),
+                "configured": bool(plain),
+                # secrets are masked; plain values are returned as-is for editing
+                "value": mask_secret(plain) if f.get("secret") else plain,
+            })
+        categories.append({"category": cat["category"], "label": cat["label"], "icon": cat["icon"], "fields": fields_out})
+    # Back-compat top-level flags
+    resend_plain = platform_key_value(s, "resend_api_key")
     return {
+        "categories": categories,
         "resend_configured": bool(resend_plain),
         "resend_masked": mask_secret(resend_plain),
         "sender_email": s.get("sender_email", "") or "",
@@ -2242,16 +2303,128 @@ async def get_platform_keys(admin=Depends(require_admin)):
 
 @api_router.put("/admin/platform-keys")
 async def save_platform_keys(req: PlatformKeysReq, admin=Depends(require_admin)):
-    updates = {}
-    if req.resend_api_key is not None and req.resend_api_key != "":
-        updates["resend_api_key_enc"] = encrypt_secret(req.resend_api_key.strip())
+    incoming = dict(req.values or {})
+    if req.resend_api_key is not None:
+        incoming["resend_api_key"] = req.resend_api_key
     if req.sender_email is not None:
-        updates["sender_email"] = req.sender_email.strip()
+        incoming["sender_email"] = req.sender_email
+    updates = {}
+    saved_fields = []
+    for key, val in incoming.items():
+        spec = _FIELD_INDEX.get(key)
+        if spec is None:
+            continue
+        if val is None:
+            continue
+        val = str(val).strip()
+        # skip masked values sent back unchanged (start with the mask dots)
+        if spec.get("secret") and val.startswith("••••"):
+            continue
+        if spec.get("secret"):
+            if val == "":
+                continue  # don't wipe a secret on empty
+            updates[f"{key}_enc"] = encrypt_secret(val)
+        else:
+            updates[key] = val
+        saved_fields.append(key)
     if updates:
         await db.settings.update_one({"id": "app_settings"}, {"$set": updates}, upsert=True)
         await load_platform_email()
-        await log_audit(admin, "platform_keys.update", "resend", {"fields": list(updates.keys())})
+        await log_audit(admin, "platform_keys.update", "platform", {"fields": saved_fields})
+    return {"ok": True, "saved": saved_fields}
+
+# ============= WAITLIST (public capture + admin view) =============
+class WaitlistReq(BaseModel):
+    email: EmailStr
+    name: Optional[str] = ""
+    source: Optional[str] = "landing"
+    note: Optional[str] = ""
+
+@api_router.post("/waitlist")
+async def waitlist_join(req: WaitlistReq):
+    email = req.email.strip().lower()
+    existing = await db.waitlist.find_one({"email": email})
+    if existing:
+        return {"ok": True, "already": True, "message": "You're already on the list."}
+    doc = {
+        "id": str(uuid.uuid4()),
+        "email": email,
+        "name": (req.name or "").strip(),
+        "source": (req.source or "landing").strip(),
+        "note": (req.note or "").strip(),
+        "created_at": now_iso(),
+    }
+    await db.waitlist.insert_one(doc.copy())
+    # Notify admin (best effort, silent if email not configured)
+    try:
+        s = await db.settings.find_one({"id": "app_settings"}, {"_id": 0}) or {}
+        notify_to = s.get("sender_email") or ADMIN_EMAIL
+        await send_email(notify_to, "New Kairo waitlist signup",
+                         f"<p>New waitlist signup:</p><p><b>{doc['name'] or '—'}</b> &lt;{doc['email']}&gt;</p><p>Source: {doc['source']}</p>")
+    except Exception:
+        pass
+    return {"ok": True, "already": False, "message": "You're on the list! We'll be in touch."}
+
+@api_router.get("/admin/waitlist")
+async def waitlist_list(admin=Depends(require_admin)):
+    docs = await db.waitlist.find({}, {"_id": 0}).sort("created_at", -1).to_list(1000)
+    return {"count": len(docs), "entries": docs}
+
+@api_router.delete("/admin/waitlist/{entry_id}")
+async def waitlist_delete(entry_id: str, admin=Depends(require_admin)):
+    await db.waitlist.delete_one({"id": entry_id})
     return {"ok": True}
+
+# ============= PUBLIC BOOKING (Kairo's own reservation calendar) =============
+class ReserveReq(BaseModel):
+    name: Optional[str] = ""
+    email: EmailStr
+    slot_iso: str
+    slot_label: Optional[str] = ""
+    note: Optional[str] = ""
+
+@api_router.get("/public/kairo-availability")
+async def kairo_availability(days: int = Query(7)):
+    """Availability slots for Kairo's own booking calendar on the landing page."""
+    synthetic_tenant = {"business_hours": DEFAULT_BUSINESS_HOURS, "meeting_duration": 30}
+    slots = _compute_available_slots(synthetic_tenant, days_ahead=min(max(days, 1), 21), limit=60)
+    return {"ok": True, "slots": slots, "meeting_duration": 30}
+
+@api_router.post("/public/reserve")
+async def public_reserve(req: ReserveReq):
+    doc = {
+        "id": str(uuid.uuid4()),
+        "name": (req.name or "").strip(),
+        "email": req.email.strip().lower(),
+        "slot_iso": req.slot_iso,
+        "slot_label": (req.slot_label or "").strip(),
+        "note": (req.note or "").strip(),
+        "status": "requested",
+        "created_at": now_iso(),
+    }
+    await db.reservations.insert_one(doc.copy())
+    s = await db.settings.find_one({"id": "app_settings"}, {"_id": 0}) or {}
+    booking_url = platform_key_value(s, "booking_url") or "https://www.upwork.com/"
+    # Notify admin (best effort)
+    try:
+        notify_to = s.get("sender_email") or ADMIN_EMAIL
+        await send_email(notify_to, "New Kairo reservation request",
+                         f"<p>New reservation:</p><p><b>{doc['name'] or '—'}</b> &lt;{doc['email']}&gt;</p>"
+                         f"<p><b>Slot:</b> {doc['slot_label'] or doc['slot_iso']}</p><p>{doc['note']}</p>")
+        # Confirmation to the visitor
+        await send_email(doc["email"], "Your Kairo slot is reserved",
+                         f"<div style='font-family:Arial;padding:20px'><h2>Slot reserved</h2>"
+                         f"<p>Thanks {doc['name'] or 'there'}! We've noted your preferred time:</p>"
+                         f"<p><b>{doc['slot_label'] or doc['slot_iso']}</b></p>"
+                         f"<p>Finish booking on Upwork: <a href='{booking_url}'>{booking_url}</a></p></div>")
+    except Exception:
+        pass
+    return {"ok": True, "reservation": doc, "booking_url": booking_url}
+
+@api_router.get("/admin/reservations")
+async def admin_reservations(admin=Depends(require_admin)):
+    docs = await db.reservations.find({}, {"_id": 0}).sort("created_at", -1).to_list(1000)
+    return {"count": len(docs), "reservations": docs}
 
 # ============= AUDIT LOG =============
 @api_router.get("/admin/audit")
@@ -2336,6 +2509,98 @@ async def training_correct(req: TrainingCorrectionReq, user=Depends(get_current_
 async def training_correction_delete(correction_id: str, user=Depends(get_current_user)):
     await db.training_corrections.delete_one({"id": correction_id, "user_id": user["id"]})
     return {"ok": True}
+
+# --- Answer Suggestions: let Kairo propose fixes for its weakest replies ---
+_WEAK_PHRASES = [
+    "i'm not sure", "i am not sure", "i don't know", "i do not know", "i'm sorry",
+    "i am sorry", "i cannot", "i can't", "i'm unable", "i am unable", "not able to",
+    "please contact", "reach out to", "i don't have", "i do not have", "no information",
+    "unfortunately", "i'm afraid", "as an ai", "i'm just", "let me connect you",
+]
+
+def _weakness_score(question: str, answer: str) -> float:
+    a = (answer or "").lower().strip()
+    if not a:
+        return 1.0
+    score = 0.0
+    for p in _WEAK_PHRASES:
+        if p in a:
+            score += 0.5
+    if len(a) < 40:
+        score += 0.4
+    if "?" in a and len(a) < 120:
+        score += 0.2
+    return min(score, 1.0)
+
+@api_router.get("/me/training/suggestions")
+async def training_suggestions(user=Depends(get_current_user), limit: int = Query(4)):
+    """Scan recent replies, find the weakest ones, and have Kairo suggest a better answer."""
+    tid = user["id"]
+    msgs = await db.messages.find({"tenant_id": tid}, {"_id": 0}).sort("created_at", -1).limit(120).to_list(120)
+    msgs.reverse()
+    pairs = []
+    last_user = None
+    for m in msgs:
+        if m.get("role") == "user":
+            last_user = m
+        elif m.get("role") == "assistant":
+            q = (last_user or {}).get("text", "")
+            pairs.append({"message_id": m.get("id"), "session_id": m.get("session_id"),
+                          "question": q, "answer": m.get("text", "")})
+    # Skip questions already corrected
+    corrected = await db.training_corrections.find({"user_id": tid}, {"_id": 0, "question": 1}).to_list(500)
+    corrected_qs = {(c.get("question") or "").strip().lower() for c in corrected}
+    # Rank by weakness
+    scored = []
+    seen_q = set()
+    for p in pairs:
+        q = (p["question"] or "").strip()
+        if not q or q.lower() in corrected_qs or q.lower() in seen_q:
+            continue
+        s = _weakness_score(q, p["answer"])
+        if s >= 0.4:
+            seen_q.add(q.lower())
+            scored.append((s, p))
+    scored.sort(key=lambda x: x[0], reverse=True)
+    top = [p for _, p in scored[: max(1, min(limit, 6))]]
+    if not top:
+        return {"suggestions": [], "message": "No weak replies found — your AI is answering confidently."}
+    # Build context for the LLM
+    instruction = (user.get("custom_instruction") or "").strip()
+    industry = (user.get("industry") or "").strip()
+    biz = user.get("bot_name") or user.get("full_name") or "the business"
+    suggestions = []
+    for p in top:
+        system = (
+            f"You are a customer-support quality coach for {biz}"
+            + (f" (industry: {industry})" if industry else "")
+            + ". Rewrite the AI's weak reply into a confident, helpful, on-brand answer. "
+            "Keep it concise (2-4 sentences), friendly, and specific. Do NOT invent fake prices, "
+            "policies, or facts that aren't supported. If a detail is unknown, offer a concrete next step. "
+            "Return ONLY the improved reply text, no preamble."
+            + (f"\n\nBusiness context: {instruction}" if instruction else "")
+        )
+        user_msg = f"Customer question:\n{p['question']}\n\nAI's weak reply:\n{p['answer'] or '(no answer)'}\n\nImproved reply:"
+        improved = ""
+        try:
+            chat = LlmChat(api_key=EMERGENT_LLM_KEY, session_id=f"suggest-{uuid.uuid4()}", system_message=system).with_model("openai", "gpt-4o")
+            async for ev in chat.stream_message(UserMessage(text=user_msg)):
+                if isinstance(ev, TextDelta):
+                    improved += ev.content
+                elif isinstance(ev, StreamDone):
+                    break
+        except Exception as e:
+            logger.error(f"suggestion gen failed: {e}")
+        improved = improved.strip().strip('"')
+        if improved:
+            suggestions.append({
+                "message_id": p["message_id"],
+                "session_id": p["session_id"],
+                "question": p["question"],
+                "original": p["answer"],
+                "suggested": improved,
+            })
+    return {"suggestions": suggestions}
 
 app.include_router(api_router)
 

@@ -293,16 +293,142 @@ frontend:
           endpoint. Save button dispatches PUT /api/admin/users/{id} with only
           changed fields (via non-null filter server-side).
 
+  - task: "Centralized Platform Keys (GET/PUT /api/admin/platform-keys)"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: |
+          Rewrote platform-keys to a generic multi-category store (email, calendar,
+          messaging, voice, chat). GET returns categories[] with fields (secrets masked
+          via ••••last4, plain values returned as-is), plus back-compat resend_configured/
+          resend_masked/sender_email. PUT accepts {values:{field:val}} + legacy
+          resend_api_key/sender_email; secrets encrypted (Fernet) under {key}_enc, plain
+          under {key}; masked values (starting ••••) and empty secrets are skipped so they
+          aren't wiped. Requires admin JWT. Backward compatible with existing
+          resend_api_key_enc + sender_email used by load_platform_email/send_email.
+      - working: true
+        agent: "testing"
+        comment: |
+          ✅ ALL TESTS PASSED (5/5):
+          1. GET /api/admin/platform-keys (admin token) → 200 with 5 categories (email, calendar, 
+             messaging, voice, chat). Each category has fields with key/label/secret/configured/value.
+          2. PUT /api/admin/platform-keys (admin) with test values (resend_api_key, sender_email, 
+             booking_url) → {ok:true, saved:[...]} with 3 fields saved.
+          3. GET /api/admin/platform-keys again → resend_api_key field configured:true and value 
+             masked (starts with ••••), sender_email value == "hello@example.com", booking_url 
+             value == "https://www.upwork.com/freelancers/baazi".
+          4. Re-PUT with masked value (value starting with ••••) does NOT wipe the stored secret 
+             (GET still shows configured:true).
+          5. Non-admin (demo token) hitting PUT /api/admin/platform-keys → correctly returns 403.
+          
+          All platform keys endpoints working correctly with proper masking, encryption, and 
+          authorization checks. Email sending is in demo mode (Resend key not configured for 
+          production) but endpoints return success as expected.
+
+  - task: "Waitlist capture (POST /api/waitlist, GET/DELETE /api/admin/waitlist)"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: |
+          POST /api/waitlist (public) validates EmailStr, dedupes by lowercased email
+          (returns already:true if present), stores {id,email,name,source,note,created_at}
+          in db.waitlist, best-effort admin notification email. GET /api/admin/waitlist
+          (admin) returns {count, entries[] desc}. DELETE /api/admin/waitlist/{id} (admin).
+      - working: true
+        agent: "testing"
+        comment: |
+          ✅ ALL TESTS PASSED (5/5):
+          1. POST /api/waitlist (no auth) with valid email → {ok:true, already:false}.
+          2. POST same email again → {ok:true, already:true} (duplicate detection works).
+          3. POST with invalid email "notanemail" → 422 (validation works).
+          4. GET /api/admin/waitlist (admin token) → {count:2, entries:[...]} with test 
+             entries present.
+          5. GET /api/admin/waitlist without token → 401 (auth required).
+          
+          All waitlist endpoints working correctly with proper validation, deduplication, 
+          and authorization checks.
+
+  - task: "Public booking calendar (GET /api/public/kairo-availability, POST /api/public/reserve, GET /api/admin/reservations)"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: |
+          GET /api/public/kairo-availability?days= computes slots from DEFAULT_BUSINESS_HOURS
+          via _compute_available_slots (30-min). POST /api/public/reserve validates email,
+          stores db.reservations, sends best-effort confirmation + admin email, returns
+          {ok, reservation, booking_url} (booking_url from platform calendar key or Upwork
+          default). GET /api/admin/reservations (admin) lists reservations desc.
+      - working: true
+        agent: "testing"
+        comment: |
+          ✅ ALL TESTS PASSED (4/4):
+          1. GET /api/public/kairo-availability?days=5 (no auth) → {ok:true, slots:[...], 
+             meeting_duration:30}. Found 48 slots with proper structure (start_iso, end_iso, label).
+          2. POST /api/public/reserve (no auth) with valid data → {ok:true, reservation:{...}, 
+             booking_url:"https://www.upwork.com/freelancers/baazi"}. Booking URL correctly 
+             retrieved from platform keys set earlier.
+          3. POST /api/public/reserve with invalid email → 422 (validation works).
+          4. GET /api/admin/reservations (admin token) → {count:1, reservations:[...]} with 
+             test reservation present.
+          
+          All public booking calendar endpoints working correctly with proper slot generation, 
+          reservation creation, and booking URL integration.
+
+  - task: "Answer Suggestions (GET /api/me/training/suggestions)"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: |
+          Scans last 120 messages, pairs visitor question + assistant reply, scores weakness
+          (uncertainty phrases / very short / empty), skips already-corrected questions,
+          takes top N (default 4), and uses LlmChat gpt-4o (EMERGENT_LLM_KEY) to generate an
+          improved reply per item. Returns {suggestions:[{message_id,session_id,question,
+          original,suggested}]} or {suggestions:[], message} when none weak. Client JWT.
+          NOTE: for the demo client there may be no messages yet, so suggestions can be [].
+      - working: true
+        agent: "testing"
+        comment: |
+          ✅ ALL TESTS PASSED (2/2):
+          1. GET /api/me/training/suggestions (demo client token) → 200 with {suggestions:[], 
+             message:"No weak replies found — your AI is answering confidently."}. This is 
+             valid since demo client has no messages yet. Endpoint does NOT return 500.
+          2. GET /api/me/training/suggestions without token → 401 (auth required).
+          
+          Answer suggestions endpoint working correctly. Returns empty list with helpful 
+          message when no weak replies found, and properly requires authentication.
+
 metadata:
   created_by: "main_agent"
-  version: "1.2"
-  test_sequence: 2
+  version: "1.4"
+  test_sequence: 4
   run_ui: false
 
 test_plan:
-  current_focus:
-    - "Public tenant endpoint + preview proxy (backend)"
-    - "Embed loader.js updated launcher/iframe (backend)"
+  current_focus: []
   stuck_tasks: []
   test_all: false
   test_priority: "high_first"
@@ -398,3 +524,37 @@ agent_communication:
       
       All 3 backend endpoints for Shopify embed + Live Sandbox are working correctly.
       Ready for frontend/UI testing when approved by user.
+  - agent: "testing"
+    message: |
+      ✅ BACKEND TESTING COMPLETE - ALL 4 NEW FEATURE GROUPS PASSED (18/18 tests)
+      
+      Tested 4 new backend feature groups as requested:
+      
+      1. CENTRALIZED PLATFORM KEYS (5/5 tests passed) ✅
+         • GET /api/admin/platform-keys returns 5 categories with all required fields
+         • PUT /api/admin/platform-keys saves values correctly
+         • Secrets are properly masked (••••) and encrypted
+         • Re-PUT with masked value does NOT wipe stored secrets
+         • Non-admin correctly returns 403
+      
+      2. WAITLIST (5/5 tests passed) ✅
+         • POST /api/waitlist accepts valid emails
+         • Duplicate detection works (already:true)
+         • Invalid email validation returns 422
+         • Admin can GET waitlist entries
+         • Unauthenticated GET returns 401
+      
+      3. PUBLIC BOOKING CALENDAR (4/4 tests passed) ✅
+         • GET /api/public/kairo-availability returns 48 slots
+         • POST /api/public/reserve creates reservations
+         • booking_url correctly retrieved from platform keys
+         • Invalid email validation returns 422
+         • Admin can GET reservations
+      
+      4. ANSWER SUGGESTIONS (2/2 tests passed) ✅
+         • GET /api/me/training/suggestions returns 200 (empty list valid for demo client)
+         • Unauthenticated GET returns 401
+      
+      All endpoints working correctly. Email sending is in demo mode (Resend key not 
+      configured for production) but endpoints return success as expected per requirements.
+      No 500 errors encountered. All authentication and authorization checks working properly.

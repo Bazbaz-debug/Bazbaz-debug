@@ -1,547 +1,836 @@
 #!/usr/bin/env python3
 """
-Backend API tests for Rozio-Killer SaaS Admin Manage-Client endpoints and Twilio API-Key auth.
+Backend API tests for Kairo SaaS - 4 NEW feature groups:
+1. Centralized Platform Keys
+2. Waitlist
+3. Public booking calendar
+4. Answer Suggestions
 """
 import requests
 import json
 import sys
+from datetime import datetime
 
-# Read base URL from frontend/.env
-BASE_URL = "https://booking-calendar-88.preview.emergentagent.com/api"
+# Base URL - internal localhost
+BASE_URL = "http://localhost:8001/api"
 
-# Test credentials
-ADMIN_EMAIL = "admin@rozio-killer.com"
-ADMIN_PASSWORD = "Admin@12345"
+# Test credentials from /app/memory/test_credentials.md
+ADMIN_EMAIL = "baazisufi23@gmail.com"
+ADMIN_PASSWORD = "Kairo@Admin2025"
 DEMO_EMAIL = "demo@client.com"
 DEMO_PASSWORD = "Demo@12345"
+
+# Global state
+admin_token = None
+demo_token = None
+test_results = []
 
 def log(msg):
     print(f"[TEST] {msg}")
 
-def test_1_admin_login():
-    """Test 1: POST /api/auth/login with admin credentials"""
-    log("Test 1: Admin login")
-    resp = requests.post(f"{BASE_URL}/auth/login", json={
-        "email": ADMIN_EMAIL,
-        "password": ADMIN_PASSWORD
-    }, timeout=15)
-    
-    if resp.status_code != 200:
-        log(f"❌ FAIL: Expected 200, got {resp.status_code}")
-        log(f"Response: {resp.text}")
-        return None, False
-    
-    data = resp.json()
-    if "token" not in data:
-        log(f"❌ FAIL: No token in response")
-        log(f"Response: {data}")
-        return None, False
-    
-    token = data["token"]
-    log(f"✅ PASS: Admin login successful, token: {token[:20]}...")
-    return token, True
-
-def test_2_list_users(admin_token):
-    """Test 2: GET /api/admin/users with admin Bearer token"""
-    log("Test 2: GET /api/admin/users (list)")
-    resp = requests.get(f"{BASE_URL}/admin/users", 
-        headers={"Authorization": f"Bearer {admin_token}"}, timeout=15)
-    
-    if resp.status_code != 200:
-        log(f"❌ FAIL: Expected 200, got {resp.status_code}")
-        log(f"Response: {resp.text}")
-        return None, False
-    
-    users = resp.json()
-    if not isinstance(users, list):
-        log(f"❌ FAIL: Expected list, got {type(users)}")
-        return None, False
-    
-    # Find demo@client.com
-    demo_user = None
-    for u in users:
-        if u.get("email") == DEMO_EMAIL:
-            demo_user = u
-            break
-    
-    if not demo_user:
-        log(f"❌ FAIL: demo@client.com not found in user list")
-        log(f"Users: {[u.get('email') for u in users]}")
-        return None, False
-    
-    demo_id = demo_user.get("id")
-    log(f"✅ PASS: Found demo@client.com with id: {demo_id}")
-    return demo_id, True
-
-def test_3_get_user(admin_token, demo_id):
-    """Test 3: GET /api/admin/users/{demo_id}"""
-    log(f"Test 3: GET /api/admin/users/{demo_id}")
-    resp = requests.get(f"{BASE_URL}/admin/users/{demo_id}",
-        headers={"Authorization": f"Bearer {admin_token}"}, timeout=15)
-    
-    if resp.status_code != 200:
-        log(f"❌ FAIL: Expected 200, got {resp.status_code}")
-        log(f"Response: {resp.text}")
-        return None, False
-    
-    user = resp.json()
-    
-    # Verify no password field
-    if "password" in user:
-        log(f"❌ FAIL: Password field should not be present")
-        return None, False
-    
-    # Verify has expected fields
-    if "email" not in user or "id" not in user:
-        log(f"❌ FAIL: Missing expected fields")
-        log(f"User: {user}")
-        return None, False
-    
-    log(f"✅ PASS: Got user profile without password field")
-    log(f"   Email: {user.get('email')}, Full Name: {user.get('full_name')}")
-    return user, True
-
-def test_4_update_user(admin_token, demo_id):
-    """Test 4: PUT /api/admin/users/{demo_id} with 8 fields"""
-    log(f"Test 4: PUT /api/admin/users/{demo_id} with 8 fields")
-    
-    update_data = {
-        "target_domain": "https://updated-demo.example.com",
-        "custom_instruction": "Updated instruction from admin test.",
-        "notification_email": "ops+test@client.com",
-        "business_owner_phone": "+15551230001",
-        "google_email": "demo.owner@gmail.com",
-        "zoom_meeting_link": "https://zoom.us/j/9998887777",
-        "resend_api_key": "re_test_dummy",
-        "custom_smtp_from": "hello@updated-demo.example.com"
+def record_result(test_name, passed, status_code=None, details=""):
+    result = {
+        "test": test_name,
+        "passed": passed,
+        "status_code": status_code,
+        "details": details
     }
-    
-    resp = requests.put(f"{BASE_URL}/admin/users/{demo_id}",
-        headers={"Authorization": f"Bearer {admin_token}"},
-        json=update_data, timeout=15)
-    
-    if resp.status_code != 200:
-        log(f"❌ FAIL: Expected 200, got {resp.status_code}")
-        log(f"Response: {resp.text}")
-        return False
-    
-    result = resp.json()
-    
-    # Verify response structure
-    if not result.get("ok"):
-        log(f"❌ FAIL: Expected ok=true")
-        log(f"Response: {result}")
-        return False
-    
-    if result.get("updated") != 8:
-        log(f"❌ FAIL: Expected updated=8, got {result.get('updated')}")
-        log(f"Response: {result}")
-        return False
-    
-    fields = result.get("fields", [])
-    if len(fields) != 8:
-        log(f"❌ FAIL: Expected 8 fields, got {len(fields)}")
-        log(f"Fields: {fields}")
-        return False
-    
-    log(f"✅ PASS: Updated 8 fields successfully")
-    log(f"   Fields: {fields}")
-    return True
+    test_results.append(result)
+    status = "✅ PASS" if passed else "❌ FAIL"
+    log(f"{status}: {test_name} (status={status_code}) {details}")
 
-def test_5_verify_update(admin_token, demo_id):
-    """Test 5: GET /api/admin/users/{demo_id} again to verify updates"""
-    log(f"Test 5: GET /api/admin/users/{demo_id} to verify updates")
+# ============= AUTHENTICATION =============
+def test_admin_login():
+    """Admin login to get Bearer token"""
+    global admin_token
+    log("=" * 60)
+    log("ADMIN LOGIN")
+    log("=" * 60)
     
-    resp = requests.get(f"{BASE_URL}/admin/users/{demo_id}",
-        headers={"Authorization": f"Bearer {admin_token}"}, timeout=15)
-    
-    if resp.status_code != 200:
-        log(f"❌ FAIL: Expected 200, got {resp.status_code}")
-        log(f"Response: {resp.text}")
+    try:
+        resp = requests.post(f"{BASE_URL}/auth/login", json={
+            "email": ADMIN_EMAIL,
+            "password": ADMIN_PASSWORD
+        }, timeout=15)
+        
+        if resp.status_code != 200:
+            record_result("Admin login", False, resp.status_code, f"Response: {resp.text[:200]}")
+            return False
+        
+        data = resp.json()
+        if "token" not in data:
+            record_result("Admin login", False, resp.status_code, "No token in response")
+            return False
+        
+        admin_token = data["token"]
+        record_result("Admin login", True, resp.status_code, f"Token: {admin_token[:20]}...")
+        return True
+    except Exception as e:
+        record_result("Admin login", False, None, f"Exception: {str(e)}")
         return False
-    
-    user = resp.json()
-    
-    # Verify all 8 fields
-    expected = {
-        "target_domain": "https://updated-demo.example.com",
-        "custom_instruction": "Updated instruction from admin test.",
-        "notification_email": "ops+test@client.com",
-        "business_owner_phone": "+15551230001",
-        "google_email": "demo.owner@gmail.com",
-        "zoom_meeting_link": "https://zoom.us/j/9998887777",
-        "resend_api_key": "re_test_dummy",
-        "custom_smtp_from": "hello@updated-demo.example.com"
-    }
-    
-    mismatches = []
-    for field, expected_value in expected.items():
-        actual_value = user.get(field)
-        if actual_value != expected_value:
-            mismatches.append(f"{field}: expected '{expected_value}', got '{actual_value}'")
-    
-    if mismatches:
-        log(f"❌ FAIL: Field mismatches:")
-        for m in mismatches:
-            log(f"   {m}")
-        return False
-    
-    log(f"✅ PASS: All 8 fields verified successfully")
-    return True
 
-def test_6_demo_login():
-    """Test 6: Login as demo client"""
-    log("Test 6: Demo client login")
-    resp = requests.post(f"{BASE_URL}/auth/login", json={
-        "email": DEMO_EMAIL,
-        "password": DEMO_PASSWORD
-    }, timeout=15)
+def test_demo_login():
+    """Demo client login to get Bearer token"""
+    global demo_token
+    log("=" * 60)
+    log("DEMO CLIENT LOGIN")
+    log("=" * 60)
     
-    if resp.status_code != 200:
-        log(f"❌ FAIL: Expected 200, got {resp.status_code}")
-        log(f"Response: {resp.text}")
-        return None, False
-    
-    data = resp.json()
-    if "token" not in data:
-        log(f"❌ FAIL: No token in response")
-        log(f"Response: {data}")
-        return None, False
-    
-    token = data["token"]
-    log(f"✅ PASS: Demo client login successful, token: {token[:20]}...")
-    return token, True
+    try:
+        resp = requests.post(f"{BASE_URL}/auth/login", json={
+            "email": DEMO_EMAIL,
+            "password": DEMO_PASSWORD
+        }, timeout=15)
+        
+        if resp.status_code != 200:
+            record_result("Demo client login", False, resp.status_code, f"Response: {resp.text[:200]}")
+            return False
+        
+        data = resp.json()
+        if "token" not in data:
+            record_result("Demo client login", False, resp.status_code, "No token in response")
+            return False
+        
+        demo_token = data["token"]
+        record_result("Demo client login", True, resp.status_code, f"Token: {demo_token[:20]}...")
+        return True
+    except Exception as e:
+        record_result("Demo client login", False, None, f"Exception: {str(e)}")
+        return False
 
-def test_7_demo_update_forbidden(demo_token, demo_id):
-    """Test 7: PUT /api/admin/users/{demo_id} with demo (non-admin) token - expect 403"""
-    log(f"Test 7: PUT /api/admin/users/{demo_id} with demo token (expect 403)")
+# ============= 1. CENTRALIZED PLATFORM KEYS =============
+def test_platform_keys_get():
+    """GET /api/admin/platform-keys (admin token) -> 200 with categories array"""
+    log("=" * 60)
+    log("1. CENTRALIZED PLATFORM KEYS - GET")
+    log("=" * 60)
     
-    resp = requests.put(f"{BASE_URL}/admin/users/{demo_id}",
-        headers={"Authorization": f"Bearer {demo_token}"},
-        json={"target_domain": "https://hacker.example.com"}, timeout=15)
-    
-    if resp.status_code != 403:
-        log(f"❌ FAIL: Expected 403, got {resp.status_code}")
-        log(f"Response: {resp.text}")
-        return False
-    
-    log(f"✅ PASS: Demo client correctly forbidden (403)")
-    return True
+    try:
+        resp = requests.get(f"{BASE_URL}/admin/platform-keys",
+            headers={"Authorization": f"Bearer {admin_token}"}, timeout=15)
+        
+        if resp.status_code != 200:
+            record_result("GET /api/admin/platform-keys", False, resp.status_code, f"Response: {resp.text[:200]}")
+            return None
+        
+        data = resp.json()
+        
+        # Verify structure
+        if "categories" not in data:
+            record_result("GET /api/admin/platform-keys", False, resp.status_code, "Missing 'categories' in response")
+            return None
+        
+        categories = data["categories"]
+        if not isinstance(categories, list):
+            record_result("GET /api/admin/platform-keys", False, resp.status_code, "'categories' is not a list")
+            return None
+        
+        # Verify expected categories exist
+        expected_categories = ["email", "calendar", "messaging", "voice", "chat"]
+        found_categories = [cat.get("category") for cat in categories]
+        
+        for exp_cat in expected_categories:
+            if exp_cat not in found_categories:
+                record_result("GET /api/admin/platform-keys", False, resp.status_code, 
+                            f"Missing expected category: {exp_cat}")
+                return None
+        
+        # Verify each category has fields with key/label/secret/configured/value
+        for cat in categories:
+            if "fields" not in cat:
+                record_result("GET /api/admin/platform-keys", False, resp.status_code, 
+                            f"Category {cat.get('category')} missing 'fields'")
+                return None
+            
+            for field in cat["fields"]:
+                required_keys = ["key", "label", "secret", "configured", "value"]
+                for req_key in required_keys:
+                    if req_key not in field:
+                        record_result("GET /api/admin/platform-keys", False, resp.status_code, 
+                                    f"Field missing '{req_key}': {field}")
+                        return None
+        
+        record_result("GET /api/admin/platform-keys", True, resp.status_code, 
+                     f"Found {len(categories)} categories with all required fields")
+        return data
+    except Exception as e:
+        record_result("GET /api/admin/platform-keys", False, None, f"Exception: {str(e)}")
+        return None
 
-def test_8_health_check(admin_token):
-    """Test 8: GET /api/admin/health - verify twilio_configured=true"""
-    log("Test 8: GET /api/admin/health")
+def test_platform_keys_put():
+    """PUT /api/admin/platform-keys (admin) with test values"""
+    log("=" * 60)
+    log("1. CENTRALIZED PLATFORM KEYS - PUT")
+    log("=" * 60)
     
-    resp = requests.get(f"{BASE_URL}/admin/health",
-        headers={"Authorization": f"Bearer {admin_token}"}, timeout=15)
-    
-    if resp.status_code != 200:
-        log(f"❌ FAIL: Expected 200, got {resp.status_code}")
-        log(f"Response: {resp.text}")
+    try:
+        # Set some test values
+        test_values = {
+            "resend_api_key": "re_test_ABC12345",
+            "sender_email": "hello@example.com",
+            "booking_url": "https://www.upwork.com/freelancers/baazi"
+        }
+        
+        resp = requests.put(f"{BASE_URL}/admin/platform-keys",
+            headers={"Authorization": f"Bearer {admin_token}"},
+            json={"values": test_values}, timeout=15)
+        
+        if resp.status_code != 200:
+            record_result("PUT /api/admin/platform-keys", False, resp.status_code, f"Response: {resp.text[:200]}")
+            return False
+        
+        data = resp.json()
+        
+        if not data.get("ok"):
+            record_result("PUT /api/admin/platform-keys", False, resp.status_code, "Response ok != true")
+            return False
+        
+        if "saved" not in data:
+            record_result("PUT /api/admin/platform-keys", False, resp.status_code, "Missing 'saved' field")
+            return False
+        
+        saved_fields = data["saved"]
+        record_result("PUT /api/admin/platform-keys", True, resp.status_code, 
+                     f"Saved {len(saved_fields)} fields: {saved_fields}")
+        return True
+    except Exception as e:
+        record_result("PUT /api/admin/platform-keys", False, None, f"Exception: {str(e)}")
         return False
-    
-    health = resp.json()
-    
-    # Verify twilio_configured is true
-    if not health.get("twilio_configured"):
-        log(f"❌ FAIL: Expected twilio_configured=true, got {health.get('twilio_configured')}")
-        log(f"Health: {health}")
-        return False
-    
-    log(f"✅ PASS: twilio_configured=true")
-    log(f"   Health status: {json.dumps(health, indent=2)}")
-    return True
 
-# ============= NEW TESTS FOR SHOPIFY EMBED + LIVE SANDBOX =============
+def test_platform_keys_get_after_put():
+    """GET /api/admin/platform-keys again to verify values were saved"""
+    log("=" * 60)
+    log("1. CENTRALIZED PLATFORM KEYS - GET AFTER PUT")
+    log("=" * 60)
+    
+    try:
+        resp = requests.get(f"{BASE_URL}/admin/platform-keys",
+            headers={"Authorization": f"Bearer {admin_token}"}, timeout=15)
+        
+        if resp.status_code != 200:
+            record_result("GET /api/admin/platform-keys (after PUT)", False, resp.status_code, 
+                         f"Response: {resp.text[:200]}")
+            return False
+        
+        data = resp.json()
+        
+        # Find resend_api_key field and verify it's configured and masked
+        resend_found = False
+        sender_found = False
+        booking_found = False
+        
+        for cat in data.get("categories", []):
+            for field in cat.get("fields", []):
+                if field["key"] == "resend_api_key":
+                    resend_found = True
+                    if not field.get("configured"):
+                        record_result("GET /api/admin/platform-keys (after PUT)", False, resp.status_code, 
+                                    "resend_api_key not configured after PUT")
+                        return False
+                    if not field.get("value", "").startswith("••••"):
+                        record_result("GET /api/admin/platform-keys (after PUT)", False, resp.status_code, 
+                                    f"resend_api_key not masked: {field.get('value')}")
+                        return False
+                
+                elif field["key"] == "sender_email":
+                    sender_found = True
+                    if field.get("value") != "hello@example.com":
+                        record_result("GET /api/admin/platform-keys (after PUT)", False, resp.status_code, 
+                                    f"sender_email value mismatch: {field.get('value')}")
+                        return False
+                
+                elif field["key"] == "booking_url":
+                    booking_found = True
+                    if field.get("value") != "https://www.upwork.com/freelancers/baazi":
+                        record_result("GET /api/admin/platform-keys (after PUT)", False, resp.status_code, 
+                                    f"booking_url value mismatch: {field.get('value')}")
+                        return False
+        
+        if not (resend_found and sender_found and booking_found):
+            record_result("GET /api/admin/platform-keys (after PUT)", False, resp.status_code, 
+                         f"Missing fields: resend={resend_found}, sender={sender_found}, booking={booking_found}")
+            return False
+        
+        record_result("GET /api/admin/platform-keys (after PUT)", True, resp.status_code, 
+                     "All values verified: resend_api_key masked, sender_email and booking_url correct")
+        return True
+    except Exception as e:
+        record_result("GET /api/admin/platform-keys (after PUT)", False, None, f"Exception: {str(e)}")
+        return False
 
-def test_9_public_tenant_valid(demo_id):
-    """Test 9: GET /api/public/tenant/{demo_id} - unauthenticated, returns safe fields"""
-    log(f"Test 9: GET /api/public/tenant/{demo_id} (no auth)")
+def test_platform_keys_masked_value_not_wiped():
+    """Confirm re-PUT with masked value does NOT wipe the stored secret"""
+    log("=" * 60)
+    log("1. CENTRALIZED PLATFORM KEYS - MASKED VALUE PRESERVATION")
+    log("=" * 60)
     
-    resp = requests.get(f"{BASE_URL}/public/tenant/{demo_id}", timeout=15)
-    
-    if resp.status_code != 200:
-        log(f"❌ FAIL: Expected 200, got {resp.status_code}")
-        log(f"Response: {resp.text}")
+    try:
+        # First, get current values
+        resp = requests.get(f"{BASE_URL}/admin/platform-keys",
+            headers={"Authorization": f"Bearer {admin_token}"}, timeout=15)
+        
+        if resp.status_code != 200:
+            record_result("Platform keys masked value preservation", False, resp.status_code, 
+                         "Failed to GET current values")
+            return False
+        
+        data = resp.json()
+        masked_resend = None
+        
+        for cat in data.get("categories", []):
+            for field in cat.get("fields", []):
+                if field["key"] == "resend_api_key":
+                    masked_resend = field.get("value")
+                    break
+        
+        if not masked_resend or not masked_resend.startswith("••••"):
+            record_result("Platform keys masked value preservation", False, resp.status_code, 
+                         "No masked resend_api_key found")
+            return False
+        
+        # Now PUT with the masked value
+        resp2 = requests.put(f"{BASE_URL}/admin/platform-keys",
+            headers={"Authorization": f"Bearer {admin_token}"},
+            json={"values": {"resend_api_key": masked_resend}}, timeout=15)
+        
+        if resp2.status_code != 200:
+            record_result("Platform keys masked value preservation", False, resp2.status_code, 
+                         f"PUT with masked value failed: {resp2.text[:200]}")
+            return False
+        
+        # GET again and verify still configured
+        resp3 = requests.get(f"{BASE_URL}/admin/platform-keys",
+            headers={"Authorization": f"Bearer {admin_token}"}, timeout=15)
+        
+        if resp3.status_code != 200:
+            record_result("Platform keys masked value preservation", False, resp3.status_code, 
+                         "Failed to GET after PUT with masked value")
+            return False
+        
+        data3 = resp3.json()
+        still_configured = False
+        
+        for cat in data3.get("categories", []):
+            for field in cat.get("fields", []):
+                if field["key"] == "resend_api_key":
+                    still_configured = field.get("configured", False)
+                    break
+        
+        if not still_configured:
+            record_result("Platform keys masked value preservation", False, resp3.status_code, 
+                         "resend_api_key was wiped after PUT with masked value")
+            return False
+        
+        record_result("Platform keys masked value preservation", True, resp3.status_code, 
+                     "Masked value preserved correctly")
+        return True
+    except Exception as e:
+        record_result("Platform keys masked value preservation", False, None, f"Exception: {str(e)}")
         return False
-    
-    data = resp.json()
-    
-    # Verify required safe fields are present
-    required_fields = [
-        "id", "full_name", "bot_name", "bot_tagline", "bot_greeting", "bot_tone",
-        "logo_url", "widget_bg", "bubble_color", "accent_color", "avatar_gender",
-        "avatar_background", "catalog", "industry"
-    ]
-    
-    missing = []
-    for field in required_fields:
-        if field not in data:
-            missing.append(field)
-    
-    if missing:
-        log(f"❌ FAIL: Missing required fields: {missing}")
-        log(f"Response: {json.dumps(data, indent=2)}")
-        return False
-    
-    # Verify sensitive fields are NOT present
-    sensitive_fields = [
-        "password", "email", "phone", "resend_api_key", "google_api_key",
-        "custom_smtp_pass", "custom_smtp_host", "custom_smtp_user",
-        "business_hours", "blocked_slots", "business_owner_phone",
-        "notification_email", "zoom_meeting_link"
-    ]
-    
-    exposed = []
-    for field in sensitive_fields:
-        if field in data:
-            exposed.append(field)
-    
-    if exposed:
-        log(f"❌ FAIL: Sensitive fields exposed: {exposed}")
-        log(f"Response: {json.dumps(data, indent=2)}")
-        return False
-    
-    log(f"✅ PASS: Public tenant endpoint returns safe fields only")
-    log(f"   ID: {data.get('id')}, Name: {data.get('full_name')}, Industry: {data.get('industry')}")
-    return True
 
-def test_10_public_tenant_not_found():
-    """Test 10: GET /api/public/tenant/does-not-exist-xyz - expect 404"""
-    log("Test 10: GET /api/public/tenant/does-not-exist-xyz (expect 404)")
+def test_platform_keys_non_admin_403():
+    """Non-admin (demo token) hitting PUT /api/admin/platform-keys must return 403"""
+    log("=" * 60)
+    log("1. CENTRALIZED PLATFORM KEYS - NON-ADMIN 403")
+    log("=" * 60)
     
-    resp = requests.get(f"{BASE_URL}/public/tenant/does-not-exist-xyz", timeout=15)
-    
-    if resp.status_code != 404:
-        log(f"❌ FAIL: Expected 404, got {resp.status_code}")
-        log(f"Response: {resp.text}")
+    try:
+        resp = requests.put(f"{BASE_URL}/admin/platform-keys",
+            headers={"Authorization": f"Bearer {demo_token}"},
+            json={"values": {"sender_email": "hacker@evil.com"}}, timeout=15)
+        
+        if resp.status_code == 403:
+            record_result("PUT /api/admin/platform-keys (non-admin)", True, resp.status_code, 
+                         "Correctly returned 403 for non-admin")
+            return True
+        else:
+            record_result("PUT /api/admin/platform-keys (non-admin)", False, resp.status_code, 
+                         f"Expected 403, got {resp.status_code}: {resp.text[:200]}")
+            return False
+    except Exception as e:
+        record_result("PUT /api/admin/platform-keys (non-admin)", False, None, f"Exception: {str(e)}")
         return False
-    
-    log(f"✅ PASS: Non-existent tenant returns 404")
-    return True
 
-def test_11_preview_proxy_valid():
-    """Test 11: GET /api/preview/proxy?url=https://example.com - verify base tag, banner, no frame-blocking headers"""
-    log("Test 11: GET /api/preview/proxy?url=https://example.com")
+# ============= 2. WAITLIST =============
+def test_waitlist_post():
+    """POST /api/waitlist (no auth) with valid email"""
+    log("=" * 60)
+    log("2. WAITLIST - POST")
+    log("=" * 60)
     
-    resp = requests.get(f"{BASE_URL}/preview/proxy", params={"url": "https://example.com"}, timeout=20)
-    
-    if resp.status_code != 200:
-        log(f"❌ FAIL: Expected 200, got {resp.status_code}")
-        log(f"Response: {resp.text[:500]}")
-        return False
-    
-    # Verify content-type is text/html
-    content_type = resp.headers.get("content-type", "").lower()
-    if "text/html" not in content_type:
-        log(f"❌ FAIL: Expected text/html, got {content_type}")
-        return False
-    
-    html = resp.text
-    
-    # Verify base tag injection
-    if '<base href="https://example.com/"' not in html:
-        log(f"❌ FAIL: Base tag not found in HTML")
-        log(f"HTML preview: {html[:1000]}")
-        return False
-    
-    # Verify banner injection
-    if "Rozio-Killer Live Sandbox" not in html:
-        log(f"❌ FAIL: Banner text 'Rozio-Killer Live Sandbox' not found")
-        log(f"HTML preview: {html[:1000]}")
-        return False
-    
-    # Verify no x-frame-options header (case-insensitive)
-    headers_lower = {k.lower(): v for k, v in resp.headers.items()}
-    if "x-frame-options" in headers_lower:
-        log(f"❌ FAIL: x-frame-options header present: {headers_lower['x-frame-options']}")
-        return False
-    
-    # Verify no restrictive content-security-policy with frame-ancestors
-    csp = headers_lower.get("content-security-policy", "")
-    if "frame-ancestors" in csp.lower():
-        log(f"❌ FAIL: Restrictive CSP with frame-ancestors found: {csp}")
-        return False
-    
-    log(f"✅ PASS: Preview proxy works correctly")
-    log(f"   Base tag injected, banner present, no frame-blocking headers")
-    return True
+    try:
+        test_email = f"lead{datetime.now().timestamp()}@example.com"
+        resp = requests.post(f"{BASE_URL}/waitlist", json={
+            "email": test_email,
+            "name": "Lead One"
+        }, timeout=15)
+        
+        if resp.status_code != 200:
+            record_result("POST /api/waitlist", False, resp.status_code, f"Response: {resp.text[:200]}")
+            return None
+        
+        data = resp.json()
+        
+        if not data.get("ok"):
+            record_result("POST /api/waitlist", False, resp.status_code, "Response ok != true")
+            return None
+        
+        if data.get("already"):
+            record_result("POST /api/waitlist", False, resp.status_code, 
+                         "New email marked as 'already' on first submission")
+            return None
+        
+        record_result("POST /api/waitlist", True, resp.status_code, f"Added {test_email}")
+        return test_email
+    except Exception as e:
+        record_result("POST /api/waitlist", False, None, f"Exception: {str(e)}")
+        return None
 
-def test_12_preview_proxy_invalid_scheme():
-    """Test 12: GET /api/preview/proxy?url=ftp://foo - expect 400"""
-    log("Test 12: GET /api/preview/proxy?url=ftp://foo (expect 400)")
+def test_waitlist_post_duplicate(email):
+    """POST /api/waitlist with same email again -> already:true"""
+    log("=" * 60)
+    log("2. WAITLIST - POST DUPLICATE")
+    log("=" * 60)
     
-    resp = requests.get(f"{BASE_URL}/preview/proxy", params={"url": "ftp://foo"}, timeout=15)
-    
-    if resp.status_code != 400:
-        log(f"❌ FAIL: Expected 400, got {resp.status_code}")
-        log(f"Response: {resp.text}")
+    if not email:
+        record_result("POST /api/waitlist (duplicate)", False, None, "No email from previous test")
         return False
     
-    log(f"✅ PASS: Invalid scheme (ftp://) returns 400")
-    return True
+    try:
+        resp = requests.post(f"{BASE_URL}/waitlist", json={
+            "email": email,
+            "name": "Lead One Again"
+        }, timeout=15)
+        
+        if resp.status_code != 200:
+            record_result("POST /api/waitlist (duplicate)", False, resp.status_code, 
+                         f"Response: {resp.text[:200]}")
+            return False
+        
+        data = resp.json()
+        
+        if not data.get("ok"):
+            record_result("POST /api/waitlist (duplicate)", False, resp.status_code, "Response ok != true")
+            return False
+        
+        if not data.get("already"):
+            record_result("POST /api/waitlist (duplicate)", False, resp.status_code, 
+                         "Duplicate email not marked as 'already'")
+            return False
+        
+        record_result("POST /api/waitlist (duplicate)", True, resp.status_code, 
+                     "Correctly returned already:true")
+        return True
+    except Exception as e:
+        record_result("POST /api/waitlist (duplicate)", False, None, f"Exception: {str(e)}")
+        return False
 
-def test_13_preview_proxy_nonexistent_domain():
-    """Test 13: GET /api/preview/proxy?url=https://this-domain-definitely-does-not-exist-abc123.tld - expect 200 with fallback HTML"""
-    log("Test 13: GET /api/preview/proxy?url=https://this-domain-definitely-does-not-exist-abc123.tld")
+def test_waitlist_post_invalid_email():
+    """POST /api/waitlist with invalid email -> 422"""
+    log("=" * 60)
+    log("2. WAITLIST - POST INVALID EMAIL")
+    log("=" * 60)
     
-    resp = requests.get(f"{BASE_URL}/preview/proxy", 
-        params={"url": "https://this-domain-definitely-does-not-exist-abc123.tld"}, timeout=20)
-    
-    if resp.status_code != 200:
-        log(f"❌ FAIL: Expected 200 (with fallback), got {resp.status_code}")
-        log(f"Response: {resp.text[:500]}")
+    try:
+        resp = requests.post(f"{BASE_URL}/waitlist", json={
+            "email": "notanemail",
+            "name": "Invalid"
+        }, timeout=15)
+        
+        if resp.status_code == 422:
+            record_result("POST /api/waitlist (invalid email)", True, resp.status_code, 
+                         "Correctly returned 422 for invalid email")
+            return True
+        else:
+            record_result("POST /api/waitlist (invalid email)", False, resp.status_code, 
+                         f"Expected 422, got {resp.status_code}: {resp.text[:200]}")
+            return False
+    except Exception as e:
+        record_result("POST /api/waitlist (invalid email)", False, None, f"Exception: {str(e)}")
         return False
-    
-    html = resp.text
-    
-    # Verify fallback error HTML contains "Could not load preview"
-    if "Could not load preview" not in html:
-        log(f"❌ FAIL: Fallback HTML should contain 'Could not load preview'")
-        log(f"HTML preview: {html[:1000]}")
-        return False
-    
-    log(f"✅ PASS: Non-existent domain returns 200 with fallback HTML")
-    return True
 
-def test_14_embed_loader_js(demo_id):
-    """Test 14: GET /api/embed/{demo_id}/loader.js - verify content-type, iframe path, close hook, mobile detection"""
-    log(f"Test 14: GET /api/embed/{demo_id}/loader.js")
+def test_waitlist_get_admin():
+    """GET /api/admin/waitlist (admin) -> list with entries"""
+    log("=" * 60)
+    log("2. WAITLIST - GET ADMIN")
+    log("=" * 60)
     
-    resp = requests.get(f"{BASE_URL}/embed/{demo_id}/loader.js", timeout=15)
-    
-    if resp.status_code != 200:
-        log(f"❌ FAIL: Expected 200, got {resp.status_code}")
-        log(f"Response: {resp.text}")
+    try:
+        resp = requests.get(f"{BASE_URL}/admin/waitlist",
+            headers={"Authorization": f"Bearer {admin_token}"}, timeout=15)
+        
+        if resp.status_code != 200:
+            record_result("GET /api/admin/waitlist", False, resp.status_code, f"Response: {resp.text[:200]}")
+            return False
+        
+        data = resp.json()
+        
+        if "count" not in data or "entries" not in data:
+            record_result("GET /api/admin/waitlist", False, resp.status_code, 
+                         "Missing 'count' or 'entries' in response")
+            return False
+        
+        if data["count"] < 1:
+            record_result("GET /api/admin/waitlist", False, resp.status_code, 
+                         "Expected at least 1 entry from previous test")
+            return False
+        
+        record_result("GET /api/admin/waitlist", True, resp.status_code, 
+                     f"Found {data['count']} entries")
+        return True
+    except Exception as e:
+        record_result("GET /api/admin/waitlist", False, None, f"Exception: {str(e)}")
         return False
-    
-    # Verify content-type is application/javascript
-    content_type = resp.headers.get("content-type", "").lower()
-    if "application/javascript" not in content_type:
-        log(f"❌ FAIL: Expected application/javascript, got {content_type}")
-        return False
-    
-    js = resp.text
-    
-    # Verify iframe path contains /embed-widget?tenant=
-    if "/embed-widget?tenant=" not in js:
-        log(f"❌ FAIL: Iframe path '/embed-widget?tenant=' not found in loader.js")
-        log(f"JS preview: {js[:500]}")
-        return False
-    
-    # Verify postMessage close hook contains 'rk:close'
-    if "rk:close" not in js:
-        log(f"❌ FAIL: postMessage close hook 'rk:close' not found")
-        log(f"JS preview: {js[:500]}")
-        return False
-    
-    # Verify mobile detection code (IS_MOBILE)
-    if "IS_MOBILE" not in js:
-        log(f"❌ FAIL: Mobile detection code 'IS_MOBILE' not found")
-        log(f"JS preview: {js[:500]}")
-        return False
-    
-    log(f"✅ PASS: Embed loader.js is correct")
-    log(f"   Content-type: application/javascript, iframe path, close hook, mobile detection all present")
-    return True
 
+def test_waitlist_get_no_auth():
+    """GET /api/admin/waitlist without token -> 401/403"""
+    log("=" * 60)
+    log("2. WAITLIST - GET NO AUTH")
+    log("=" * 60)
+    
+    try:
+        resp = requests.get(f"{BASE_URL}/admin/waitlist", timeout=15)
+        
+        if resp.status_code in [401, 403]:
+            record_result("GET /api/admin/waitlist (no auth)", True, resp.status_code, 
+                         "Correctly returned 401/403 without auth")
+            return True
+        else:
+            record_result("GET /api/admin/waitlist (no auth)", False, resp.status_code, 
+                         f"Expected 401/403, got {resp.status_code}: {resp.text[:200]}")
+            return False
+    except Exception as e:
+        record_result("GET /api/admin/waitlist (no auth)", False, None, f"Exception: {str(e)}")
+        return False
+
+# ============= 3. PUBLIC BOOKING CALENDAR =============
+def test_kairo_availability():
+    """GET /api/public/kairo-availability?days=5 (no auth) -> slots array"""
+    log("=" * 60)
+    log("3. PUBLIC BOOKING CALENDAR - AVAILABILITY")
+    log("=" * 60)
+    
+    try:
+        resp = requests.get(f"{BASE_URL}/public/kairo-availability?days=5", timeout=15)
+        
+        if resp.status_code != 200:
+            record_result("GET /api/public/kairo-availability", False, resp.status_code, 
+                         f"Response: {resp.text[:200]}")
+            return None
+        
+        data = resp.json()
+        
+        if not data.get("ok"):
+            record_result("GET /api/public/kairo-availability", False, resp.status_code, 
+                         "Response ok != true")
+            return None
+        
+        if "slots" not in data:
+            record_result("GET /api/public/kairo-availability", False, resp.status_code, 
+                         "Missing 'slots' in response")
+            return None
+        
+        slots = data["slots"]
+        if not isinstance(slots, list):
+            record_result("GET /api/public/kairo-availability", False, resp.status_code, 
+                         "'slots' is not a list")
+            return None
+        
+        if len(slots) == 0:
+            record_result("GET /api/public/kairo-availability", False, resp.status_code, 
+                         "slots array is empty")
+            return None
+        
+        # Verify slot structure
+        first_slot = slots[0]
+        required_keys = ["start_iso", "end_iso", "label"]
+        for key in required_keys:
+            if key not in first_slot:
+                record_result("GET /api/public/kairo-availability", False, resp.status_code, 
+                             f"Slot missing '{key}': {first_slot}")
+                return None
+        
+        if "meeting_duration" not in data:
+            record_result("GET /api/public/kairo-availability", False, resp.status_code, 
+                         "Missing 'meeting_duration' in response")
+            return None
+        
+        record_result("GET /api/public/kairo-availability", True, resp.status_code, 
+                     f"Found {len(slots)} slots, meeting_duration={data['meeting_duration']}")
+        return first_slot["start_iso"]
+    except Exception as e:
+        record_result("GET /api/public/kairo-availability", False, None, f"Exception: {str(e)}")
+        return None
+
+def test_public_reserve(slot_iso):
+    """POST /api/public/reserve (no auth) with valid data"""
+    log("=" * 60)
+    log("3. PUBLIC BOOKING CALENDAR - RESERVE")
+    log("=" * 60)
+    
+    if not slot_iso:
+        record_result("POST /api/public/reserve", False, None, "No slot_iso from previous test")
+        return False
+    
+    try:
+        test_email = f"alice{datetime.now().timestamp()}@example.com"
+        resp = requests.post(f"{BASE_URL}/public/reserve", json={
+            "name": "Alice",
+            "email": test_email,
+            "slot_iso": slot_iso,
+            "slot_label": "picked slot"
+        }, timeout=15)
+        
+        if resp.status_code != 200:
+            record_result("POST /api/public/reserve", False, resp.status_code, 
+                         f"Response: {resp.text[:200]}")
+            return False
+        
+        data = resp.json()
+        
+        if not data.get("ok"):
+            record_result("POST /api/public/reserve", False, resp.status_code, "Response ok != true")
+            return False
+        
+        if "reservation" not in data:
+            record_result("POST /api/public/reserve", False, resp.status_code, 
+                         "Missing 'reservation' in response")
+            return False
+        
+        if "booking_url" not in data:
+            record_result("POST /api/public/reserve", False, resp.status_code, 
+                         "Missing 'booking_url' in response")
+            return False
+        
+        # Verify booking_url is the one we set earlier
+        expected_url = "https://www.upwork.com/freelancers/baazi"
+        if data["booking_url"] != expected_url:
+            record_result("POST /api/public/reserve", False, resp.status_code, 
+                         f"booking_url mismatch: expected {expected_url}, got {data['booking_url']}")
+            return False
+        
+        record_result("POST /api/public/reserve", True, resp.status_code, 
+                     f"Reserved slot for {test_email}, booking_url correct")
+        return True
+    except Exception as e:
+        record_result("POST /api/public/reserve", False, None, f"Exception: {str(e)}")
+        return False
+
+def test_public_reserve_invalid_email():
+    """POST /api/public/reserve with invalid email -> 422"""
+    log("=" * 60)
+    log("3. PUBLIC BOOKING CALENDAR - RESERVE INVALID EMAIL")
+    log("=" * 60)
+    
+    try:
+        resp = requests.post(f"{BASE_URL}/public/reserve", json={
+            "name": "Invalid",
+            "email": "notanemail",
+            "slot_iso": "2026-01-01T10:00:00Z",
+            "slot_label": "test"
+        }, timeout=15)
+        
+        if resp.status_code == 422:
+            record_result("POST /api/public/reserve (invalid email)", True, resp.status_code, 
+                         "Correctly returned 422 for invalid email")
+            return True
+        else:
+            record_result("POST /api/public/reserve (invalid email)", False, resp.status_code, 
+                         f"Expected 422, got {resp.status_code}: {resp.text[:200]}")
+            return False
+    except Exception as e:
+        record_result("POST /api/public/reserve (invalid email)", False, None, f"Exception: {str(e)}")
+        return False
+
+def test_admin_reservations():
+    """GET /api/admin/reservations (admin) -> list with reservations"""
+    log("=" * 60)
+    log("3. PUBLIC BOOKING CALENDAR - ADMIN RESERVATIONS")
+    log("=" * 60)
+    
+    try:
+        resp = requests.get(f"{BASE_URL}/admin/reservations",
+            headers={"Authorization": f"Bearer {admin_token}"}, timeout=15)
+        
+        if resp.status_code != 200:
+            record_result("GET /api/admin/reservations", False, resp.status_code, 
+                         f"Response: {resp.text[:200]}")
+            return False
+        
+        data = resp.json()
+        
+        if "count" not in data or "reservations" not in data:
+            record_result("GET /api/admin/reservations", False, resp.status_code, 
+                         "Missing 'count' or 'reservations' in response")
+            return False
+        
+        if data["count"] < 1:
+            record_result("GET /api/admin/reservations", False, resp.status_code, 
+                         "Expected at least 1 reservation from previous test")
+            return False
+        
+        record_result("GET /api/admin/reservations", True, resp.status_code, 
+                     f"Found {data['count']} reservations")
+        return True
+    except Exception as e:
+        record_result("GET /api/admin/reservations", False, None, f"Exception: {str(e)}")
+        return False
+
+# ============= 4. ANSWER SUGGESTIONS =============
+def test_answer_suggestions():
+    """GET /api/me/training/suggestions (demo client token) -> 200"""
+    log("=" * 60)
+    log("4. ANSWER SUGGESTIONS")
+    log("=" * 60)
+    
+    try:
+        resp = requests.get(f"{BASE_URL}/me/training/suggestions",
+            headers={"Authorization": f"Bearer {demo_token}"}, timeout=15)
+        
+        if resp.status_code != 200:
+            record_result("GET /api/me/training/suggestions", False, resp.status_code, 
+                         f"Response: {resp.text[:200]}")
+            return False
+        
+        data = resp.json()
+        
+        if "suggestions" not in data:
+            record_result("GET /api/me/training/suggestions", False, resp.status_code, 
+                         "Missing 'suggestions' in response")
+            return False
+        
+        suggestions = data["suggestions"]
+        if not isinstance(suggestions, list):
+            record_result("GET /api/me/training/suggestions", False, resp.status_code, 
+                         "'suggestions' is not a list")
+            return False
+        
+        # Empty list is valid if demo client has no messages
+        if len(suggestions) == 0:
+            if "message" in data:
+                record_result("GET /api/me/training/suggestions", True, resp.status_code, 
+                             f"Empty suggestions with message: {data['message']}")
+            else:
+                record_result("GET /api/me/training/suggestions", True, resp.status_code, 
+                             "Empty suggestions (demo client likely has no messages)")
+        else:
+            # Verify structure of suggestions
+            first_sugg = suggestions[0]
+            required_keys = ["message_id", "session_id", "question", "original", "suggested"]
+            for key in required_keys:
+                if key not in first_sugg:
+                    record_result("GET /api/me/training/suggestions", False, resp.status_code, 
+                                 f"Suggestion missing '{key}': {first_sugg}")
+                    return False
+            
+            record_result("GET /api/me/training/suggestions", True, resp.status_code, 
+                         f"Found {len(suggestions)} suggestions")
+        
+        return True
+    except Exception as e:
+        record_result("GET /api/me/training/suggestions", False, None, f"Exception: {str(e)}")
+        return False
+
+def test_answer_suggestions_no_auth():
+    """GET /api/me/training/suggestions without token -> 401/403"""
+    log("=" * 60)
+    log("4. ANSWER SUGGESTIONS - NO AUTH")
+    log("=" * 60)
+    
+    try:
+        resp = requests.get(f"{BASE_URL}/me/training/suggestions", timeout=15)
+        
+        if resp.status_code in [401, 403]:
+            record_result("GET /api/me/training/suggestions (no auth)", True, resp.status_code, 
+                         "Correctly returned 401/403 without auth")
+            return True
+        else:
+            record_result("GET /api/me/training/suggestions (no auth)", False, resp.status_code, 
+                         f"Expected 401/403, got {resp.status_code}: {resp.text[:200]}")
+            return False
+    except Exception as e:
+        record_result("GET /api/me/training/suggestions (no auth)", False, None, f"Exception: {str(e)}")
+        return False
+
+# ============= MAIN TEST RUNNER =============
 def main():
     log("=" * 60)
-    log("Starting Rozio-Killer Backend API Tests")
+    log("KAIRO SAAS BACKEND API TESTS - 4 NEW FEATURE GROUPS")
     log("=" * 60)
-    
-    results = {}
-    
-    # Test 1: Admin login
-    admin_token, success = test_1_admin_login()
-    results["Test 1: Admin login"] = success
-    if not success:
-        log("❌ Cannot continue without admin token")
-        print_summary(results)
-        sys.exit(1)
-    
-    # Test 2: List users
-    demo_id, success = test_2_list_users(admin_token)
-    results["Test 2: List users"] = success
-    if not success:
-        log("❌ Cannot continue without demo user ID")
-        print_summary(results)
-        sys.exit(1)
-    
-    # Test 3: Get user
-    user, success = test_3_get_user(admin_token, demo_id)
-    results["Test 3: Get user profile"] = success
-    
-    # Test 4: Update user
-    success = test_4_update_user(admin_token, demo_id)
-    results["Test 4: Update user (8 fields)"] = success
-    
-    # Test 5: Verify update
-    success = test_5_verify_update(admin_token, demo_id)
-    results["Test 5: Verify updates"] = success
-    
-    # Test 6: Demo login
-    demo_token, success = test_6_demo_login()
-    results["Test 6: Demo client login"] = success
-    if not success:
-        log("⚠️  Cannot test demo forbidden without demo token")
-    else:
-        # Test 7: Demo update forbidden
-        success = test_7_demo_update_forbidden(demo_token, demo_id)
-        results["Test 7: Demo update forbidden (403)"] = success
-    
-    # Test 8: Health check
-    success = test_8_health_check(admin_token)
-    results["Test 8: Health check (twilio_configured)"] = success
-    
-    # ============= NEW TESTS FOR SHOPIFY EMBED + LIVE SANDBOX =============
+    log(f"Base URL: {BASE_URL}")
+    log(f"Admin: {ADMIN_EMAIL}")
+    log(f"Demo: {DEMO_EMAIL}")
     log("")
-    log("=" * 60)
-    log("NEW TESTS: Shopify Embed + Live Sandbox")
-    log("=" * 60)
     
-    # Test 9: Public tenant endpoint - valid
-    success = test_9_public_tenant_valid(demo_id)
-    results["Test 9: Public tenant (valid)"] = success
-    
-    # Test 10: Public tenant endpoint - not found
-    success = test_10_public_tenant_not_found()
-    results["Test 10: Public tenant (404)"] = success
-    
-    # Test 11: Preview proxy - valid URL
-    success = test_11_preview_proxy_valid()
-    results["Test 11: Preview proxy (valid URL)"] = success
-    
-    # Test 12: Preview proxy - invalid scheme
-    success = test_12_preview_proxy_invalid_scheme()
-    results["Test 12: Preview proxy (invalid scheme)"] = success
-    
-    # Test 13: Preview proxy - non-existent domain
-    success = test_13_preview_proxy_nonexistent_domain()
-    results["Test 13: Preview proxy (non-existent domain)"] = success
-    
-    # Test 14: Embed loader.js
-    success = test_14_embed_loader_js(demo_id)
-    results["Test 14: Embed loader.js"] = success
-    
-    print_summary(results)
-    
-    # Exit with error code if any test failed
-    if not all(results.values()):
+    # Authentication
+    if not test_admin_login():
+        log("❌ CRITICAL: Admin login failed, cannot continue")
         sys.exit(1)
-
-def print_summary(results):
+    
+    if not test_demo_login():
+        log("❌ CRITICAL: Demo login failed, cannot continue")
+        sys.exit(1)
+    
+    # 1. Centralized Platform Keys
+    test_platform_keys_get()
+    test_platform_keys_put()
+    test_platform_keys_get_after_put()
+    test_platform_keys_masked_value_not_wiped()
+    test_platform_keys_non_admin_403()
+    
+    # 2. Waitlist
+    waitlist_email = test_waitlist_post()
+    test_waitlist_post_duplicate(waitlist_email)
+    test_waitlist_post_invalid_email()
+    test_waitlist_get_admin()
+    test_waitlist_get_no_auth()
+    
+    # 3. Public Booking Calendar
+    slot_iso = test_kairo_availability()
+    test_public_reserve(slot_iso)
+    test_public_reserve_invalid_email()
+    test_admin_reservations()
+    
+    # 4. Answer Suggestions
+    test_answer_suggestions()
+    test_answer_suggestions_no_auth()
+    
+    # Summary
+    log("")
     log("=" * 60)
     log("TEST SUMMARY")
     log("=" * 60)
-    for test_name, passed in results.items():
-        status = "✅ PASS" if passed else "❌ FAIL"
-        log(f"{status}: {test_name}")
+    
+    total = len(test_results)
+    passed = sum(1 for r in test_results if r["passed"])
+    failed = total - passed
+    
+    log(f"Total tests: {total}")
+    log(f"Passed: {passed}")
+    log(f"Failed: {failed}")
+    log("")
+    
+    if failed > 0:
+        log("FAILED TESTS:")
+        for r in test_results:
+            if not r["passed"]:
+                log(f"  ❌ {r['test']} (status={r['status_code']}) - {r['details']}")
+        log("")
+    
+    log("ALL TESTS:")
+    for r in test_results:
+        status = "✅" if r["passed"] else "❌"
+        log(f"  {status} {r['test']} (status={r['status_code']})")
+    
+    log("")
     log("=" * 60)
-    passed = sum(1 for v in results.values() if v)
-    total = len(results)
-    log(f"Results: {passed}/{total} tests passed")
+    if failed == 0:
+        log("✅ ALL TESTS PASSED")
+    else:
+        log(f"❌ {failed} TEST(S) FAILED")
     log("=" * 60)
+    
+    sys.exit(0 if failed == 0 else 1)
 
 if __name__ == "__main__":
     main()
