@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
-import { Bot, Lock } from "lucide-react";
+import { Bot, Lock, AlertCircle } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -14,16 +14,25 @@ export default function Login() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
 
   const submit = async (e) => {
     e.preventDefault();
+    setError("");
     setBusy(true);
     try {
       const u = await login(email, password);
       toast.success("Welcome back");
       nav(u.role === "admin" ? "/admin" : "/dashboard");
     } catch (err) {
-      toast.error(err?.response?.data?.detail || "Login failed");
+      const status = err?.response?.status;
+      const detail = err?.response?.data?.detail;
+      setError(
+        detail ||
+        (status === 401 || status === 400
+          ? "That email and password don't match. Please try again."
+          : "We couldn't sign you in. Check your connection and try again.")
+      );
     } finally { setBusy(false); }
   };
 
@@ -48,13 +57,19 @@ export default function Login() {
           <div className="space-y-5">
             <div>
               <Label htmlFor="email" className="text-[#A0AEC0]">Email</Label>
-              <Input data-testid="login-email-input" id="email" type="email" required value={email} onChange={e => setEmail(e.target.value)} className="mt-1.5 bg-[#2D3748] border-white/10 text-white h-11" placeholder="you@company.com"/>
+              <Input data-testid="login-email-input" id="email" type="email" required value={email} onChange={e => { setEmail(e.target.value); if (error) setError(""); }} className={`mt-1.5 bg-[#2D3748] text-white h-11 transition-all duration-300 ease-out will-change-transform focus:-translate-y-0.5 focus:border-[#48BB78] focus:bg-[#323d4e] focus:shadow-[0_0_0_3px_rgba(72,187,120,0.20),0_10px_25px_-8px_rgba(72,187,120,0.45)] ${error ? "border-red-500/60" : "border-white/10"}`} placeholder="you@company.com"/>
             </div>
             <div>
               <Label htmlFor="password" className="text-[#A0AEC0]">Password</Label>
-              <Input data-testid="login-password-input" id="password" type="password" required value={password} onChange={e => setPassword(e.target.value)} className="mt-1.5 bg-[#2D3748] border-white/10 text-white h-11" placeholder="&bull;&bull;&bull;&bull;&bull;&bull;&bull;&bull;"/>
+              <Input data-testid="login-password-input" id="password" type="password" required value={password} onChange={e => { setPassword(e.target.value); if (error) setError(""); }} className={`mt-1.5 bg-[#2D3748] text-white h-11 transition-all duration-300 ease-out will-change-transform focus:-translate-y-0.5 focus:border-[#48BB78] focus:bg-[#323d4e] focus:shadow-[0_0_0_3px_rgba(72,187,120,0.20),0_10px_25px_-8px_rgba(72,187,120,0.45)] ${error ? "border-red-500/60" : "border-white/10"}`} placeholder="&bull;&bull;&bull;&bull;&bull;&bull;&bull;&bull;"/>
             </div>
-            <Button data-testid="login-submit-btn" type="submit" disabled={busy} className="w-full bg-[#48BB78] hover:bg-[#38A169] text-[#1A202C] hover:text-white font-bold h-11 rounded-md">
+            {error && (
+              <div data-testid="login-error" role="alert" className="flex items-start gap-2 rounded-md border border-red-500/40 bg-red-500/10 px-3 py-2.5 text-sm text-red-300 animate-in fade-in slide-in-from-top-1 duration-300">
+                <AlertCircle size={16} className="mt-0.5 flex-shrink-0"/>
+                <span>{error}</span>
+              </div>
+            )}
+            <Button data-testid="login-submit-btn" type="submit" disabled={busy} className="w-full bg-[#48BB78] text-[#1A202C] font-bold h-11 rounded-md transition-all duration-300 ease-out will-change-transform hover:bg-[#38A169] hover:text-white hover:-translate-y-0.5 hover:shadow-[0_12px_30px_-8px_rgba(72,187,120,0.6)] active:translate-y-0 active:scale-[0.99] disabled:opacity-60 disabled:hover:translate-y-0 disabled:hover:shadow-none">
               {busy ? "Signing in..." : "Sign in"}
             </Button>
             <div className="flex justify-between text-sm">
