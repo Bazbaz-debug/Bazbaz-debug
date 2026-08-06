@@ -15,7 +15,6 @@ function resolveLogoUrl(logo_url) {
 }
 
 // Parse action + language + buy markers from streaming text
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 function extractActions(text) {
   const actions = [];
   const re = /\[\[ACTION:([a-zA-Z_]+)(?::([^\]]+))?\]\]/g;
@@ -199,24 +198,6 @@ export default function Widget({ tenant, colors, catalog, embedded = false, onCl
     } catch { toast.error("Booking failed"); }
   }, [tenant]);
 
-  // Reveal a reply with lifelike, human typing pauses (word-by-word, slower after punctuation)
-  const typeOut = useCallback(async (full, buys) => {
-    const setLast = (txt, extra = {}) => setMessages(m => { const c = [...m]; c[c.length - 1] = { role: "assistant", text: txt, ...extra }; return c; });
-    const fast = full.length > 300 ? 0.45 : 1;
-    await sleep((330 + Math.random() * 380) * fast); // human "composing" pause
-    const tokens = full.match(/\S+\s*/g) || [full];
-    let shown = "";
-    for (let i = 0; i < tokens.length; i++) {
-      shown += tokens[i];
-      setLast(shown);
-      const last = tokens[i].trim().slice(-1);
-      if (/[.!?]/.test(last)) await sleep((180 + Math.random() * 170) * fast);
-      else if (/[,;:]/.test(last)) await sleep((85 + Math.random() * 90) * fast);
-      else await sleep((38 + Math.random() * 45) * fast);
-    }
-    setLast(full, { buys });
-  }, []);
-
   const sendText = useCallback(async (text) => {
     if (!text.trim() || busy) return;
     setMessages(m => [...m, { role: "user", text }, { role: "assistant", text: "" }]);
@@ -230,6 +211,7 @@ export default function Widget({ tenant, colors, catalog, embedded = false, onCl
       });
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
+      let lastPaint = 0;
       while (true) {
         const { value, done } = await reader.read();
         if (done) break;
@@ -238,19 +220,23 @@ export default function Widget({ tenant, colors, catalog, embedded = false, onCl
           if (!line.startsWith("data: ")) continue;
           try {
             const p = JSON.parse(line.slice(6));
-            if (p.delta) { acc += p.delta; }
+            if (p.delta) {
+              acc += p.delta;
+              // Live-stream the text as it arrives (fast, still reads like natural typing).
+              const now = Date.now();
+              if (now - lastPaint > 40) {
+                lastPaint = now;
+                const { clean: partial } = extractActions(acc);
+                if (partial) setMessages(m => { const c=[...m]; c[c.length-1]={role:"assistant",text:partial}; return c; });
+              }
+            }
           } catch {}
         }
       }
       // Final: check for action markers + language + buy
       const { clean, actions, lang, buys } = extractActions(acc);
       if (lang) setReplyLang(lang);
-      if (callActiveRef.current) {
-        // In a live voice call, show text immediately so speech isn't delayed
-        setMessages(m => { const c=[...m]; c[c.length-1]={role:"assistant",text:clean, buys}; return c; });
-      } else {
-        await typeOut(clean, buys);
-      }
+      setMessages(m => { const c=[...m]; c[c.length-1]={role:"assistant",text:clean, buys}; return c; });
       // Play TTS with clean text (strip emoji so they aren't read aloud; pass lang for voice)
       const spoken = clean.replace(/[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{2190}-\u{21FF}\u{2B00}-\u{2BFF}\u{FE0F}\u{200D}]/gu, "").replace(/\s{2,}/g, " ").trim();
       if (spoken && voiceMode) {
@@ -285,7 +271,7 @@ export default function Widget({ tenant, colors, catalog, embedded = false, onCl
       }
     } catch (e) { toast.error("Chat failed"); }
     finally { setBusy(false); }
-  }, [busy, sessionId, tenant, voiceMode, lipsyncMode, playTTS, escalate, bookSlot, typeOut]);
+  }, [busy, sessionId, tenant, voiceMode, lipsyncMode, playTTS, escalate, bookSlot]);
 
   // ============ Poll for human_agent replies (business-owner takeover) ============
   const lastHumanCheckRef = useRef(new Date().toISOString());
@@ -422,8 +408,16 @@ export default function Widget({ tenant, colors, catalog, embedded = false, onCl
     callActiveRef.current = true;
     setCallActive(true);
     setVoiceMode(true);
-    setMessages(m => [...m, { role: "assistant", text: "Voice call started. Just talk — I'll listen." }]);
-    await playTTS("Hey — you're on. What can I do for you?");
+    // Warm, human hello the instant the call connects — spoken immediately.
+    const bizName = tenant?.bot_name || tenant?.full_name || "";
+    const rawGreeting = (tenant?.bot_greeting || "").trim();
+    const greet = rawGreeting
+      || (bizName
+          ? `Hey there! Thanks for hopping on — you've reached ${bizName}. It's great to have you. How can I help you today?`
+          : "Hey there! Thanks for hopping on — it's really great to have you. So, how can I help you today?");
+    const spokenGreet = greet.replace(/[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{2190}-\u{21FF}\u{2B00}-\u{2BFF}\u{FE0F}\u{200D}]/gu, "").replace(/\s{2,}/g, " ").trim();
+    setMessages(m => [...m, { role: "assistant", text: greet }]);
+    await playTTS(spokenGreet);
     if (SR) {
       listenLoop();
     } else {

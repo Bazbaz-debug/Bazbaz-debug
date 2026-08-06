@@ -134,3 +134,9 @@ See `/app/memory/test_credentials.md`
 - ✅ **Lifelike typing pauses** — Widget now buffers the streamed reply and reveals it word-by-word via a typewriter effect (initial ~350ms "composing" pause with typing dots, then per-word delays with longer pauses after . ! ? and commas; auto-speeds for long replies). Skipped during live voice calls so speech isn't delayed.
 - ✅ **Occasional emoji** — chat_stream prompt now encourages one tasteful emoji now and then on light/positive replies (never on serious topics). Verified live: "Hey! How's your day going? 😊".
 - ✅ **Emoji stripped from voice/TTS** — spoken text has emoji removed so they aren't read aloud (text + lipsync paths).
+
+## What's been implemented — 06 Aug 2026 (faster + smarter chat + voice greeting)
+- ✅ **Faster replies** — reverted the slow buffer-then-typewriter; widget now LIVE-streams tokens (throttled ~40ms) so text appears instantly and still reads like natural typing. Fixed the "hi is delayed" issue.
+- ✅ **Smarter answers** — prompt now: (5b) EXPLAIN don't link — explains what a product/service is + the benefit in plain language, NEVER pastes raw URLs / reads web addresses; (5c) always-be-closing — after answering, invites the next step (book/quote/order) with one friendly question. Verified: "stripping and waxing?" → explains it + "Would you like a quote?" (no URL).
+- ✅ **Voice greeting** — face-to-face call now opens with a warm spoken hello the instant it connects (uses tenant's configured greeting or a personalized default with business name); shown on-screen + spoken via TTS (emoji stripped from speech).
+- ✅ Verified live via /api/chat/stream: "hi" → "Hey there! How's your day going? 😊" (warm, fast); service question → explain + book, no link.
