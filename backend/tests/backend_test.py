@@ -4,9 +4,9 @@ import io
 import pytest
 import requests
 
-BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', 'https://env-recovery-build.preview.emergentagent.com').rstrip('/')
+BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', 'https://booking-calendar-88.preview.emergentagent.com').rstrip('/')
 # Frontend .env holds public URL; use it explicitly here so test container talks via ingress
-BASE_URL = "https://env-recovery-build.preview.emergentagent.com"
+BASE_URL = "https://booking-calendar-88.preview.emergentagent.com"
 
 DEMO_EMAIL = "demo@client.com"
 DEMO_PW = "Demo@12345"
