@@ -609,53 +609,31 @@ async def startup():
     logger.info("Startup complete")
 
 async def _generate_avatars():
-    """Generate & cache concierge portrait faces in the background.
-    Tries fal.ai flux (photorealistic) → OpenAI gpt-image-1 → dicebear SVG fallback.
-    Runs off the startup critical path so auth is never blocked."""
-    prompts = {
-        "male": "professional realistic photo of a friendly male AI concierge in his 30s, neutral background, soft studio lighting, clean look, portrait, high detail",
-        "female": "professional realistic photo of a friendly female AI concierge in her 30s, neutral background, soft studio lighting, clean look, portrait, high detail",
-        "neutral": "professional realistic photo of an androgynous AI concierge in their 30s, neutral background, soft studio lighting, clean look, portrait, high detail",
+    """Cache realistic concierge portrait faces in the background.
+    Uses curated real professional headshots (Unsplash, face-cropped) so the
+    voice-call screen shows a real human instead of a cartoon — and without
+    spending any LLM / image-generation budget. Dicebear is the last resort."""
+    # Curated realistic portraits, face-cropped to a square for the call screen.
+    def _u(photo_id):
+        return f"https://images.unsplash.com/{photo_id}?ixlib=rb-4.1.0&q=80&fm=jpg&w=512&h=512&fit=crop&crop=faces"
+    portraits = {
+        "male": _u("photo-1589386417686-0d34b5903d23"),
+        "female": _u("photo-1494790108377-be9c29b29330"),
+        "neutral": _u("photo-1770058443069-e384cd001e9b"),
     }
-    for g, prompt in prompts.items():
+    for g, url in portraits.items():
         image_bytes = None
-        # Try fal.ai flux/schnell for realistic faces
-        if FAL_KEY:
-            try:
-                result = await asyncio.to_thread(
-                    lambda p=prompt: fal_client.subscribe(
-                        "fal-ai/flux/schnell",
-                        arguments={"prompt": p, "image_size": "portrait_4_3", "num_inference_steps": 4},
-                        with_logs=False,
-                    )
-                )
-                img_url = None
-                if isinstance(result, dict):
-                    images = result.get("images") or []
-                    if images and isinstance(images[0], dict):
-                        img_url = images[0].get("url")
-                if img_url:
-                    r = await asyncio.to_thread(lambda: requests.get(img_url, timeout=15))
-                    if r.status_code == 200 and len(r.content) > 1000:
-                        image_bytes = r.content
-                        logger.info(f"fal.ai generated {g} avatar")
-            except Exception as e:
-                logger.warning(f"fal.ai avatar gen failed for {g}: {e}")
-        # Fallback #1: OpenAI gpt-image-1 — DISABLED to conserve the shared LLM budget
-        # (image generation is expensive and was exhausting the key). Using free dicebear below.
-        if False and not image_bytes and EMERGENT_LLM_KEY:
-            try:
-                gen = OpenAIImageGeneration(api_key=EMERGENT_LLM_KEY)
-                imgs = await gen.generate_images(prompt=prompt, model="gpt-image-1", number_of_images=1, quality="low")
-                if imgs and len(imgs[0]) > 1000:
-                    image_bytes = imgs[0]
-                    logger.info(f"OpenAI gpt-image-1 generated {g} avatar")
-            except Exception as e:
-                logger.warning(f"OpenAI gpt-image-1 failed for {g}: {e}")
+        try:
+            r = await asyncio.to_thread(lambda u=url: requests.get(u, timeout=15))
+            if r.status_code == 200 and len(r.content) > 2000:
+                image_bytes = r.content
+                logger.info(f"realistic portrait cached for {g} avatar")
+        except Exception as e:
+            logger.warning(f"realistic portrait fetch failed for {g}: {e}")
         if image_bytes:
-            _avatar_cache[g] = ("image/png", image_bytes)
+            _avatar_cache[g] = ("image/jpeg", image_bytes)
         else:
-            # Fallback #2: dicebear SVG (stable illustrated fallback)
+            # Fallback: dicebear SVG (illustrated) only if the photo fetch failed
             seed = {"male": "Concierge-Aiden", "female": "Concierge-Aria", "neutral": "Concierge-Nova"}[g]
             try:
                 r = await asyncio.to_thread(lambda s=seed: requests.get(f"https://api.dicebear.com/9.x/personas/svg?seed={s}&backgroundColor=1A202C,2D3748&size=400", timeout=8))
