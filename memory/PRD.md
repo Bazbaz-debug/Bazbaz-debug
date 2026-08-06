@@ -112,3 +112,11 @@ See `/app/memory/test_credentials.md`
 - ✅ **Client dashboard "My Keys" tab** — new Settings tab renders those categories (client-scoped), styled to match. Admin keeps full control (own platform keys + per-client Manage modal + "View as" to edit any client's keys); clients only see their own.
 - ✅ Uploads/knowledge base & embed code remain per-tenant (personalized: a file added updates only that client's bot; embed works on Shopify/WooCommerce/any site).
 - ✅ Backend tested 7/7 (save+mask, idempotent masked re-PUT, auth 401, isolation between two clients). Frontend visually verified (demo client My Keys shows its own masked Resend + Calendly). Automated frontend UI test pending user approval.
+
+## What's been implemented — 06 Aug 2026 (Landing + Login premium redesign)
+- ✅ **Animated backgrounds** — scroll-reactive aurora layer (fixed, -z-10, isolate root) with hue-rotate + parallax on scroll; Login left panel gets the same aurora glow.
+- ✅ **Flipping hero word** — RotatingWord component cycles gradient words (convert./book the call./answer 24/7./upsell./close it.) on Landing; Login headline "Log in to convert./book./automate./grow./ship."
+- ✅ **Upgraded UI** — glass pill chips for the platform marquee, premium images in img-frame cards (e-commerce, marketing analytics, cleaning service), new service-business use-case card.
+- ✅ **Reviews = Fresh N Clean LLC** — featured testimonial rewritten to their story (prior freelancer's basic AI vs Kairo booking cleaning jobs), section retitled "They tried a basic bot. Then they tried Kairo."
+- ✅ **"Why this matters" footer** — persuasive sell copy (even for a simple Upwork booking) + 4 value cards (Never miss a lead / Browsers→bookings / Sounds like you / Live in minutes) + gradient "Let's talk".
+- ✅ Frontend testing agent: 11/11 pass (flip word animates, images load naturalWidth>0, Fresh N Clean present, why-grid present, wrong creds show inline error, correct admin creds route to /admin). No console errors.
