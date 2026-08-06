@@ -375,6 +375,90 @@ backend:
           Embed loader.js working correctly with all required functionality.
 
 frontend:
+  - task: "Landing + Login premium redesign (animated bg, flip word, images, Fresh N Clean review, why-section)"
+    implemented: true
+    working: true
+    file: "frontend/src/pages/Landing.jsx, frontend/src/pages/Login.jsx, frontend/src/index.css"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: |
+          Landing: scroll-reactive aurora background (fixed layer -z-10 + isolate root,
+          hue-rotate + parallax on scroll), animated flip hero word (RotatingWord), glass
+          pill chips for platform marquee, upgraded premium images (img-frame), new
+          cleaning/service-business use-case card, testimonials rebuilt around FRESH N CLEAN
+          LLC (featured: prior freelancer's basic AI vs Kairo), new "Why this matters" footer
+          (4 value cards + Upwork sell copy + gradient "Let's talk"). Login: aurora bg + flip
+          word headline; inline error + focus glow retained. Visually verified. Needs UI test.
+      - working: true
+        agent: "testing"
+        comment: |
+          ✅ ALL 11 REVIEW REQUEST ITEMS VERIFIED - REDESIGN FULLY FUNCTIONAL
+          
+          LANDING PAGE ("/") - 7/7 TESTS PASSED:
+          1. ✅ Hero section (data-testid="hero-section") loads with headline "Kairo." and 
+             "The right moment to" + flip-word animation WORKING (text changed from "convert." 
+             to "answer 24/7." after 4 seconds, cycling through words as expected)
+          2. ✅ Marquee section (data-testid="marquee-section") shows 21 pill-chip elements 
+             (glass "pill-chip" chips for platforms: Shopify, WordPress, Webflow, etc.)
+          3. ✅ Use-cases section (data-testid="use-cases-section") has all 3 cards:
+             - use-case-shopify: image loaded (naturalWidth: 6240px) ✓
+             - use-case-ads: image loaded (naturalWidth: 4810px) ✓
+             - use-case-smb: image loaded (naturalWidth: 5568px) ✓
+             All premium images (e-commerce, marketing analytics, cleaning service) loaded correctly
+          4. ✅ Testimonials section (data-testid="testimonials-section"):
+             - Featured review (data-testid="testimonial-featured") contains "Fresh N Clean LLC" ✓
+             - Mentions "basic" bot from previous freelancer ✓
+             - testimonial-marketer and testimonial-support exist ✓
+          5. ✅ Footer (data-testid="footer"):
+             - why-grid (data-testid="why-grid") exists with all 4 value cards (why-0, why-1, 
+               why-2, why-3) ✓
+             - "Let's talk." heading visible ✓
+          6. ✅ Scroll test: Smoothly scrolled from top to bottom, all sections (hero, use-cases, 
+             testimonials, footer) visible and readable over animated background. NO sections 
+             blank or covered by background overlay. Screenshots captured at each section.
+          7. ✅ Upwork button (data-testid="footer-upwork-btn") clicked successfully, opened new 
+             tab to https://www.upwork.com/, page remained intact (no crash or JS errors)
+          
+          LOGIN PAGE ("/login") - 4/4 TESTS PASSED:
+          8. ✅ Left panel shows flip-word (class "flip-word") in headline "Log in to convert." 
+             (rotating through: convert., book., automate., grow., ship.)
+          9. ✅ Input focus glow working correctly:
+             - login-email-input: focus changes border to rgb(72, 187, 120) with box shadow ✓
+             - login-password-input: focus changes border to rgb(72, 187, 120) with box shadow ✓
+             No errors on focus, visual glow effect confirmed in screenshot
+          10. ✅ Wrong credentials test (email: baazisufi23@gmail.com, password: wrongpass):
+              - Inline error box (data-testid="login-error") appeared with message "Invalid credentials" ✓
+              - No crash, error displayed correctly
+          11. ✅ Correct credentials test (email: baazisufi23@gmail.com, password: Bigbaaz23):
+              - Successfully navigated to /admin ✓
+              - Admin sidebar (data-testid="admin-sidebar") appeared ✓
+              - Login flow working correctly after redesign
+          
+          CONSOLE & ERROR CHECK:
+          • No console errors observed during testing
+          • No error elements found on pages
+          • All animations smooth and performant
+          • Background overlay does not obscure content
+          
+          SCREENSHOTS CAPTURED:
+          • landing-top.png - Hero section with flip-word "convert."
+          • landing-use-cases.png - Use-cases section with all 3 cards and images
+          • landing-use-cases-detailed.png - Detailed view of use-cases
+          • landing-testimonials.png - Fresh N Clean testimonial visible
+          • landing-footer.png - Footer with why-grid and "Let's talk." heading
+          • login-focus.png - Login page with password input focused (error state)
+          • login-focus-detailed.png - Login page with focus glow visible
+          • admin-after-login.png - Admin dashboard after successful login
+          
+          The redesigned Landing and Login pages render correctly with all premium features 
+          working: animated background, flip-word animations, premium images, Fresh N Clean 
+          testimonial, why-section, and core login flow. All 11 review request items verified 
+          and passing.
+
   - task: "Admin Manage-Client modal (Profile / Website+Files / Integrations / Metrics tabs)"
     implemented: true
     working: "NA"
@@ -603,6 +687,29 @@ agent_communication:
          are set (even without TWILIO_AUTH_TOKEN).
       Do NOT test third-party side-effects (real Twilio call, real email
       send) — those require phone numbers / Resend key that aren't set.
+  - agent: "testing"
+    message: |
+      ✅ LANDING + LOGIN REDESIGN VERIFIED - ALL 11 REVIEW ITEMS PASSED
+      
+      Tested the redesigned public Landing page (/) and Login page (/login) per review request.
+      
+      LANDING PAGE (7/7 passed):
+      • Hero section with "Kairo." headline and flip-word animation (convert. → answer 24/7. → etc.) ✓
+      • Marquee section with 21 glass pill-chip elements (Shopify, WordPress, etc.) ✓
+      • Use-cases section with 3 cards (shopify, ads, smb) - all images loaded (naturalWidth > 0) ✓
+      • Testimonials section with Fresh N Clean LLC featured review mentioning "basic" bot ✓
+      • Footer with why-grid (4 value cards: why-0 to why-3) and "Let's talk." heading ✓
+      • Scroll test: all sections visible over animated background, no blank/covered areas ✓
+      • Upwork button (footer-upwork-btn) opens new tab without crash ✓
+      
+      LOGIN PAGE (4/4 passed):
+      • Flip-word in headline "Log in to convert." (rotating words) ✓
+      • Input focus glow working (border: rgb(72,187,120), box shadow visible) ✓
+      • Wrong credentials (wrongpass) show inline error "Invalid credentials" ✓
+      • Correct credentials (baazisufi23@gmail.com / Bigbaaz23) navigate to /admin with sidebar ✓
+      
+      No console errors. All animations smooth. Premium images loaded. Core flows working.
+      Redesign is production-ready.
   - agent: "testing"
     message: |
       ✅ NEW BACKEND ENDPOINTS VERIFIED (all 3 pass):

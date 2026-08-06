@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { Bot, Lock, AlertCircle } from "lucide-react";
@@ -7,6 +7,15 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { KairoMark } from "@/components/KairoLogo";
+
+function RotatingWord({ words }) {
+  const [i, setI] = useState(0);
+  useEffect(() => {
+    const t = setInterval(() => setI((x) => (x + 1) % words.length), 2100);
+    return () => clearInterval(t);
+  }, [words.length]);
+  return <span key={i} className="flip-word gradient-text-primary">{words[i]}</span>;
+}
 
 export default function Login() {
   const { login } = useAuth();
@@ -38,15 +47,16 @@ export default function Login() {
 
   return (
     <div className="min-h-screen grid lg:grid-cols-2">
-      <div className="hidden lg:flex flex-col justify-between p-12 bg-[#0D1117] relative dot-grid noise">
+      <div className="hidden lg:flex flex-col justify-between p-12 bg-[#0D1117] relative dot-grid noise overflow-hidden isolate">
+        <div className="absolute inset-0 -z-10 pointer-events-none overflow-hidden" aria-hidden="true"><div className="aurora" /></div>
         <Link to="/" className="flex items-center gap-2 relative z-10">
           <div className="w-9 h-9 rounded-md bg-[#48BB78] flex items-center justify-center text-[#1A202C]"><KairoMark size={22}/></div>
           <span className="font-display font-black text-xl">Kairo</span>
         </Link>
         <div className="relative z-10 max-w-md">
           <p className="uppercase text-xs tracking-[0.3em] text-[#48BB78] font-bold mb-3">Neon-Green Console</p>
-          <h1 className="font-display font-black text-5xl leading-none tracking-tighter mb-4">Log in.<br/>Ship widgets.</h1>
-          <p className="text-[#A0AEC0]">The interactive sandbox is waiting on the other side.</p>
+          <h1 className="font-display font-black text-5xl leading-none tracking-tighter mb-4">Log in to&nbsp;<RotatingWord words={["convert.", "book.", "automate.", "grow.", "ship."]} /></h1>
+          <p className="text-[#A0AEC0]">Your embeddable AI concierge is waiting on the other side.</p>
         </div>
         <p className="text-xs text-[#A0AEC0] relative z-10">Your embeddable AI concierge, isolated per workspace.</p>
       </div>

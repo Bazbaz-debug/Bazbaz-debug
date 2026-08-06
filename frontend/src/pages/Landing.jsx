@@ -1,5 +1,5 @@
 import { useNavigate } from "react-router-dom";
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { toast } from "sonner";
 import api from "../lib/api";
 import { Button } from "../components/ui/button";
@@ -14,6 +14,23 @@ import {
 const UPWORK_URL = "https://www.upwork.com/";
 
 const PLATFORMS = ["Shopify", "WordPress", "Webflow", "Wix", "Squarespace", "BigCommerce", "Framer"];
+
+// Premium imagery
+const IMG_CLEANING = "https://images.unsplash.com/photo-1581270275831-be22c51ba9c9?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA3MDB8MHwxfHNlYXJjaHwzfHxjbGVhbmluZyUyMHNlcnZpY2V8ZW58MHx8fGJsYWNrfDE3ODU5ODIwNDZ8MA&ixlib=rb-4.1.0&q=85";
+const IMG_ECOM = "https://images.unsplash.com/photo-1612703769284-0103b1e5ef70?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA2MjJ8MHwxfHNlYXJjaHwyfHxlY29tbWVyY2UlMjBzdG9yZXxlbnwwfHx8YmxhY2t8MTc4NTk4MjA0Nnww&ixlib=rb-4.1.0&q=85";
+const IMG_MARKETING = "https://images.unsplash.com/photo-1551288049-bebda4e38f71?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjY2NjV8MHwxfHNlYXJjaHwxfHxtYXJrZXRpbmclMjBhbmFseXRpY3N8ZW58MHx8fGJsYWNrfDE3ODU5ODIwNDZ8MA&ixlib=rb-4.1.0&q=85";
+const IMG_OWNER = "https://images.unsplash.com/photo-1573633509389-0e3075dea01b?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA1MDV8MHwxfHNlYXJjaHwxfHxidXNpbmVzcyUyMG93bmVyfGVufDB8fHxibGFja3wxNzg1OTgyMDUzfDA&ixlib=rb-4.1.0&q=85";
+const IMG_BG = "https://images.unsplash.com/photo-1591981863992-7747083cbd11?auto=format&fit=crop&w=1600&q=80";
+
+function RotatingWord({ words }) {
+  const [i, setI] = useState(0);
+  useEffect(() => {
+    const t = setInterval(() => setI((x) => (x + 1) % words.length), 2100);
+    return () => clearInterval(t);
+  }, [words.length]);
+  return <span key={i} className="flip-word gradient-text-primary">{words[i]}</span>;
+}
+
 
 const FEATURES = [
   { icon: MessageSquare, title: "Instant FAQ answers", desc: "Trained on your site, PDFs & policies — no more repeat questions." },
@@ -188,10 +205,38 @@ function BookingCalendar({ onReserved }) {
 export default function LandingPage() {
   const nav = useNavigate();
   const openUpwork = () => window.open(UPWORK_URL, "_blank", "noopener");
+  const bgRef = useRef(null);
+
+  useEffect(() => {
+    const onScroll = () => {
+      const y = window.scrollY || 0;
+      if (bgRef.current) {
+        bgRef.current.style.transform = `translate3d(0, ${y * 0.12}px, 0)`;
+        bgRef.current.style.filter = `hue-rotate(${Math.min(y / 14, 55)}deg)`;
+      }
+    };
+    window.addEventListener("scroll", onScroll, { passive: true });
+    const els = document.querySelectorAll(".reveal");
+    const io = new IntersectionObserver(
+      (entries) => entries.forEach((e) => { if (e.isIntersecting) { e.target.classList.add("in"); io.unobserve(e.target); } }),
+      { threshold: 0.12 }
+    );
+    els.forEach((el) => io.observe(el));
+    // Safety: reveal everything shortly after mount in case observer misses
+    const fallback = setTimeout(() => document.querySelectorAll(".reveal").forEach((el) => el.classList.add("in")), 1200);
+    return () => { window.removeEventListener("scroll", onScroll); io.disconnect(); clearTimeout(fallback); };
+  }, []);
 
   return (
-    <div className="relative min-h-screen bg-[#0B1016] text-white overflow-x-hidden noise" data-testid="landing-page">
-      <div className="dot-grid fixed inset-0 opacity-40 pointer-events-none" />
+    <div className="relative isolate min-h-screen bg-[#0B1016] text-white overflow-x-hidden noise" data-testid="landing-page">
+      {/* Animated background layers (scroll-reactive) */}
+      <div ref={bgRef} className="fixed inset-0 -z-10 pointer-events-none overflow-hidden will-change-transform" aria-hidden="true">
+        <div className="dot-grid absolute inset-0 opacity-40" />
+        <div className="aurora" />
+        <img src={IMG_BG} alt="" className="absolute inset-0 w-full h-full object-cover opacity-[0.10] mix-blend-screen" />
+        <div className="absolute inset-0 bg-gradient-to-b from-transparent via-transparent to-[#0B1016]" />
+      </div>
+
 
       {/* ============ STICKY NAV ============ */}
       <header data-testid="sticky-header" className="fixed top-0 inset-x-0 z-50 glass border-b border-white/10">
@@ -217,7 +262,7 @@ export default function LandingPage() {
             <Lock size={12} /> In demo mode · Upwork clients only
           </div>
           <h1 className="fade-up font-display font-black text-5xl sm:text-6xl lg:text-7xl tracking-tighter leading-[0.95]" style={{ animationDelay: "0.05s" }}>
-            <span className="gradient-text-primary">Kairo.</span><br />The right moment.
+            <span className="gradient-text-primary">Kairo.</span><br />The right moment to&nbsp;<RotatingWord words={["convert.", "book the call.", "answer 24/7.", "upsell.", "close it."]} />
           </h1>
           <p className="fade-up mt-6 text-base md:text-lg text-white/60 max-w-2xl mx-auto leading-relaxed" style={{ animationDelay: "0.12s" }}>
             An AI concierge that catches high-intent visitors the instant they land — answering, upselling and booking, so you never lose a ready-to-buy customer again.
@@ -238,44 +283,54 @@ export default function LandingPage() {
 
       {/* ============ MARQUEE ============ */}
       <section data-testid="marquee-section" className="w-full overflow-hidden py-8 border-y border-white/10 bg-white/[0.015]">
-        <div className="marquee-track items-center gap-10 text-white/40 font-display font-bold text-lg">
+        <p className="text-center text-[10px] uppercase tracking-[0.35em] font-bold text-white/30 mb-5">Drops into any website in one line</p>
+        <div className="marquee-track items-center gap-4 text-lg">
           {[...PLATFORMS, ...PLATFORMS, ...PLATFORMS].map((p, i) => (
-            <span key={i} className="flex items-center gap-10 whitespace-nowrap">
-              {p} <Star size={12} className="star" />
+            <span key={i} className="pill-chip text-sm">
+              <span className="pill-dot" /> {p}
             </span>
           ))}
         </div>
       </section>
 
       {/* ============ USE CASES (BENTO) ============ */}
-      <section id="use-cases" data-testid="use-cases-section" className="max-w-7xl mx-auto px-6 py-28">
+      <section id="use-cases" data-testid="use-cases-section" className="max-w-7xl mx-auto px-6 py-28 reveal">
         <div className="max-w-2xl mb-14">
           <p className="text-[11px] uppercase tracking-[0.3em] font-bold text-[#48BB78] mb-3">Who it's for</p>
           <h2 className="font-display font-black text-4xl md:text-5xl tracking-tight">Built for people who just need it to work.</h2>
+          <p className="text-white/55 mt-4 leading-relaxed">Whether you sell products, run ads, or answer the same booking questions all day — Kairo picks up the moment a visitor lands and turns it into revenue.</p>
         </div>
         <div className="grid md:grid-cols-12 gap-6">
-          {/* Large card */}
+          {/* Large card — ecommerce */}
           <div className="md:col-span-7 glass neon-glow-hover rounded-3xl p-8 overflow-hidden relative group" data-testid="use-case-shopify">
             <div className="relative z-10">
               <ShoppingBag className="text-[#48BB78] mb-5" size={28} />
-              <h3 className="font-display font-black text-2xl md:text-3xl tracking-tight mb-3">You run a Shopify store and just need a fix.</h3>
+              <h3 className="font-display font-black text-2xl md:text-3xl tracking-tight mb-3">You run a store and just need a fix.</h3>
               <p className="text-white/55 text-sm md:text-base max-w-lg leading-relaxed">Visitors bounce with questions unanswered. Drop in one line of code and Kairo handles sizing, shipping, returns and order tracking — recovering the sales you were quietly losing.</p>
             </div>
-            <img src="https://images.unsplash.com/photo-1674027392857-9aed6e8ecab9?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NTY2Njd8MHwxfHNlYXJjaHw0fHxzaG9waWZ5JTIwZGFzaGJvYXJkJTIwZGFya3xlbnwwfHx8fDE3ODU5NjQ5ODN8MA&ixlib=rb-4.1.0&q=85" alt="Shopify store dashboard" className="mt-6 w-full h-56 object-cover rounded-2xl border border-white/10 opacity-90 group-hover:opacity-100 transition-opacity duration-500" />
+            <div className="img-frame mt-6 h-56">
+              <img src={IMG_ECOM} alt="Modern e-commerce store" className="w-full h-full object-cover" loading="lazy" />
+            </div>
           </div>
-          {/* Medium card */}
+          {/* Medium card — ads */}
           <div className="md:col-span-5 glass neon-glow-hover rounded-3xl p-8 overflow-hidden relative group flex flex-col" data-testid="use-case-ads">
             <TrendingUp className="text-[#48BB78] mb-5" size={28} />
             <h3 className="font-display font-black text-2xl tracking-tight mb-3">You buy ads and need every click to convert.</h3>
             <p className="text-white/55 text-sm leading-relaxed">Paid traffic is expensive. Kairo greets each visitor instantly, qualifies them, and books the call — turning cold clicks into booked revenue.</p>
-            <img src="https://images.unsplash.com/photo-1658953229664-e8d5ebd039ba?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjAzNDR8MHwxfHNlYXJjaHwyfHxtYXJrZXRpbmclMjBhbmFseXRpY3MlMjBkYXJrfGVufDB8fHx8MTc4NTk2NDk4M3ww&ixlib=rb-4.1.0&q=85" alt="Marketing analytics" className="mt-auto pt-6 w-full h-40 object-cover rounded-2xl border border-white/10 opacity-90 group-hover:opacity-100 transition-opacity duration-500" />
+            <div className="img-frame mt-auto pt-0 h-40 mt-6">
+              <img src={IMG_MARKETING} alt="Marketing analytics" className="w-full h-full object-cover" loading="lazy" />
+            </div>
           </div>
-          {/* Small full card */}
-          <div className="md:col-span-12 glass neon-glow-hover rounded-3xl p-8 flex flex-col md:flex-row md:items-center gap-6" data-testid="use-case-smb">
-            <Zap className="text-[#48BB78] flex-shrink-0" size={28} />
-            <div>
-              <h3 className="font-display font-black text-2xl tracking-tight mb-1.5">Any small business that wants to stop answering the same questions.</h3>
-              <p className="text-white/55 text-sm leading-relaxed max-w-3xl">Kairo learns your business from your site and documents, then works 24/7 — in 95+ languages — so you can focus on the work only you can do.</p>
+          {/* Full card — service businesses / cleaning */}
+          <div className="md:col-span-12 glass neon-glow-hover rounded-3xl overflow-hidden relative grid md:grid-cols-2 gap-0" data-testid="use-case-smb">
+            <div className="p-8 md:p-10 flex flex-col justify-center">
+              <Zap className="text-[#48BB78] mb-5" size={28} />
+              <h3 className="font-display font-black text-2xl md:text-3xl tracking-tight mb-3">Service businesses that live and die by bookings.</h3>
+              <p className="text-white/55 text-sm md:text-base leading-relaxed max-w-xl">Cleaning companies, contractors, salons, clinics — Kairo learns your services and prices, answers in 95+ languages, and books the job straight into your calendar, 24/7. It stops chasing quotes so you can do the work only you can do.</p>
+            </div>
+            <div className="relative min-h-[240px] md:min-h-full">
+              <img src={IMG_CLEANING} alt="Professional cleaning service" className="absolute inset-0 w-full h-full object-cover" loading="lazy" />
+              <div className="absolute inset-0 bg-gradient-to-r from-[#0D1117] via-[#0D1117]/40 to-transparent" />
             </div>
           </div>
         </div>
@@ -335,41 +390,81 @@ export default function LandingPage() {
       </section>
 
       {/* ============ TESTIMONIALS ============ */}
-      <section data-testid="testimonials-section" className="max-w-7xl mx-auto px-6 py-24">
+      <section data-testid="testimonials-section" className="max-w-7xl mx-auto px-6 py-24 reveal">
+        <div className="max-w-2xl mb-12">
+          <p className="text-[11px] uppercase tracking-[0.3em] font-bold text-[#48BB78] mb-3">Real results</p>
+          <h2 className="font-display font-black text-4xl md:text-5xl tracking-tight">They tried a basic bot. Then they tried Kairo.</h2>
+        </div>
         <div className="grid md:grid-cols-5 gap-6">
-          <div className="md:col-span-3 glass rounded-3xl p-8 md:p-10" data-testid="testimonial-featured">
+          <div className="md:col-span-3 glass rounded-3xl p-8 md:p-10 relative overflow-hidden" data-testid="testimonial-featured">
             <div className="flex gap-1 mb-5">{[...Array(5)].map((_, i) => <Star key={i} size={16} className="star" />)}</div>
-            <p className="font-display font-bold text-2xl md:text-3xl tracking-tight leading-snug">"Kairo answers my customers better than my old support team did — and it booked three orders while I slept. This is the evolution of the bot I demoed months ago."</p>
+            <p className="font-display font-bold text-2xl md:text-3xl tracking-tight leading-snug">"We needed a bot for our website. The last freelancer gave us a basic AI that couldn't even hold a conversation — customers got frustrated and left. Baazi's Kairo actually quotes our prices, answers questions, and books cleaning jobs straight into our schedule. It runs circles around what we had. He nailed it."</p>
             <div className="mt-8 flex items-center gap-3">
-              <div className="w-11 h-11 rounded-full bg-[#48BB78]/15 border border-[#48BB78]/30 flex items-center justify-center"><KairoMark size={22} /></div>
+              <img src={IMG_OWNER} alt="Fresh N Clean owner" className="w-12 h-12 rounded-full object-cover border border-[#48BB78]/40" />
               <div>
+                <p className="font-bold text-sm">Owner &amp; Operator</p>
+                <p className="text-xs text-white/45">Fresh N Clean LLC · Cleaning Services</p>
+              </div>
+            </div>
+          </div>
+          <div className="md:col-span-2 flex flex-col gap-6">
+            <div className="glass rounded-3xl p-8 flex flex-col justify-center flex-1" data-testid="testimonial-support">
+              <div className="flex gap-1 mb-4">{[...Array(5)].map((_, i) => <Star key={i} size={14} className="star" />)}</div>
+              <p className="text-white/80 text-base leading-relaxed">"It booked three orders while I slept and answers customers better than my old support team. This is the evolution of the bot I demoed months ago."</p>
+              <div className="mt-5">
                 <p className="font-bold text-sm">Marcus Vale</p>
                 <p className="text-xs text-white/45">Founder, Vale Athletics (Shopify)</p>
               </div>
             </div>
-          </div>
-          <div className="md:col-span-2 glass rounded-3xl p-8 flex flex-col justify-center" data-testid="testimonial-support">
-            <div className="flex gap-1 mb-5">{[...Array(5)].map((_, i) => <Star key={i} size={14} className="star" />)}</div>
-            <p className="text-white/75 text-base leading-relaxed">"Every ad dollar goes further. Kairo catches visitors the second they land and turns clicks into booked calls."</p>
-            <div className="mt-6">
-              <p className="font-bold text-sm">Priya N.</p>
-              <p className="text-xs text-white/45">Performance Marketer</p>
+            <div className="glass rounded-3xl p-8 flex flex-col justify-center flex-1" data-testid="testimonial-marketer">
+              <div className="flex gap-1 mb-4">{[...Array(5)].map((_, i) => <Star key={i} size={14} className="star" />)}</div>
+              <p className="text-white/80 text-base leading-relaxed">"Every ad dollar goes further. Kairo catches visitors the second they land and turns clicks into booked calls."</p>
+              <div className="mt-5">
+                <p className="font-bold text-sm">Priya N.</p>
+                <p className="text-xs text-white/45">Performance Marketer</p>
+              </div>
             </div>
           </div>
         </div>
       </section>
 
-      {/* ============ FOOTER ============ */}
-      <footer data-testid="footer" className="border-t border-white/10 bg-black px-6 pt-24 pb-14">
-        <div className="max-w-7xl mx-auto">
-          <h2 className="font-display font-black tracking-tighter text-[16vw] md:text-[11vw] leading-none text-white/90">Let's talk.</h2>
-          <div className="mt-12 flex flex-col md:flex-row md:items-end justify-between gap-8 border-t border-white/10 pt-10">
-            <div>
+      {/* ============ FOOTER / WHY ============ */}
+      <footer data-testid="footer" className="relative border-t border-white/10 bg-black px-6 pt-24 pb-14 overflow-hidden">
+        <img src={IMG_BG} alt="" aria-hidden="true" className="absolute inset-0 w-full h-full object-cover opacity-[0.08] mix-blend-screen pointer-events-none" />
+        <div className="max-w-7xl mx-auto relative z-10">
+          {/* WHY YOU NEED THIS */}
+          <div className="reveal max-w-3xl mb-16">
+            <p className="text-[11px] uppercase tracking-[0.3em] font-bold text-[#48BB78] mb-3">Why this matters</p>
+            <h3 className="font-display font-black text-3xl md:text-4xl tracking-tight leading-tight">Even a “simple” website is leaking customers every day.</h3>
+            <p className="text-white/60 mt-4 leading-relaxed">Every visitor who lands with a question and doesn't get an instant answer is a sale walking out the door. Just here to book me on Upwork for one small task? Perfect — but picture what happens once Kairo is live: it works every hour you don't, answers everyone, and quietly turns traffic you already paid for into booked revenue.</p>
+          </div>
+          <div className="reveal grid sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-20" data-testid="why-grid">
+            {[
+              { icon: Clock, title: "Never miss a lead", desc: "Replies in seconds, 24/7 — nights, weekends, holidays. You sleep, it sells." },
+              { icon: TrendingUp, title: "Browsers → bookings", desc: "Qualifies each visitor and books the call or job right into your calendar." },
+              { icon: Languages, title: "Sounds like you", desc: "Learns your business from your site & docs, in 95+ languages, on-brand." },
+              { icon: Zap, title: "Live in minutes", desc: "One line of code on Shopify, WordPress, Wix — anywhere. No dev team needed." },
+            ].map((w, i) => (
+              <div key={i} className="glass rounded-2xl p-6 border border-white/5" data-testid={`why-${i}`}>
+                <div className="w-10 h-10 rounded-xl bg-[#48BB78]/15 border border-[#48BB78]/30 flex items-center justify-center text-[#48BB78] mb-4"><w.icon size={18} /></div>
+                <h4 className="font-display font-bold text-base tracking-tight mb-1.5">{w.title}</h4>
+                <p className="text-white/50 text-sm leading-relaxed">{w.desc}</p>
+              </div>
+            ))}
+          </div>
+
+          <h2 className="font-display font-black tracking-tighter text-[16vw] md:text-[11vw] leading-none">
+            <span className="gradient-text-primary">Let's</span> talk.
+          </h2>
+          <div className="mt-10 flex flex-col md:flex-row md:items-end justify-between gap-8 border-t border-white/10 pt-10">
+            <div className="max-w-md">
               <KairoLogo size={28} />
-              <p className="text-white/45 text-sm mt-4 max-w-sm">The AI concierge that catches high-intent visitors. Currently in private demo for Upwork clients only.</p>
+              <p className="text-white/45 text-sm mt-4">The AI concierge that catches high-intent visitors and turns them into revenue. Book me on Upwork and I'll set up Kairo for your business.</p>
             </div>
             <div className="flex flex-col gap-3 md:items-end">
-              <button data-testid="footer-upwork-btn" onClick={openUpwork} className="btn-luxe text-xs w-fit">Book on Upwork</button>
+              <button data-testid="footer-upwork-btn" onClick={openUpwork} className="btn-luxe text-sm flex items-center gap-2 !px-8 !py-3.5 w-fit">
+                Book me on Upwork <ArrowUpRight size={16} />
+              </button>
               <button onClick={() => nav("/login")} className="text-sm text-white/60 hover:text-white transition-colors link-underline w-fit">Client Login</button>
             </div>
           </div>

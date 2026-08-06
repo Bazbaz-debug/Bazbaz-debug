@@ -283,3 +283,62 @@ input[type="color"].hide-native::-webkit-color-swatch { border: 2px solid rgba(2
 }
 
 .fade-up { animation: fade-up 0.7s cubic-bezier(.2,.9,.3,1) both; }
+
+/* ================= HERO / BACKGROUND UPGRADES ================= */
+/* Rotating flip word in headlines */
+@keyframes flip-in {
+  0%   { opacity: 0; transform: rotateX(-85deg) translateY(8px); }
+  55%  { opacity: 1; }
+  100% { opacity: 1; transform: rotateX(0deg) translateY(0); }
+}
+.flip-word {
+  display: inline-block;
+  transform-origin: 50% 100%;
+  animation: flip-in 0.6s cubic-bezier(.2,.9,.3,1) both;
+  will-change: transform, opacity;
+}
+
+/* Animated aurora background layer */
+@keyframes aurora-shift {
+  0%   { transform: translate3d(-8%, -4%, 0) scale(1); }
+  50%  { transform: translate3d(8%, 4%, 0) scale(1.18); }
+  100% { transform: translate3d(-8%, -4%, 0) scale(1); }
+}
+.aurora {
+  position: absolute; inset: -25%;
+  pointer-events: none;
+  filter: blur(70px);
+  opacity: 0.55;
+  background:
+    radial-gradient(38% 38% at 18% 28%, rgba(72,187,120,0.40), transparent 62%),
+    radial-gradient(32% 32% at 82% 18%, rgba(56,178,172,0.28), transparent 62%),
+    radial-gradient(46% 46% at 62% 82%, rgba(72,187,120,0.22), transparent 62%);
+  animation: aurora-shift 20s ease-in-out infinite;
+}
+
+/* Glass pill chip */
+.pill-chip {
+  display: inline-flex; align-items: center; gap: 0.5rem;
+  padding: 0.5rem 1rem; border-radius: 9999px;
+  border: 1px solid rgba(255,255,255,0.08);
+  background: rgba(255,255,255,0.035);
+  backdrop-filter: blur(8px);
+  color: rgba(255,255,255,0.78); font-weight: 700; white-space: nowrap;
+  transition: all 0.25s ease;
+}
+.pill-chip:hover {
+  border-color: rgba(72,187,120,0.5); color: #fff;
+  box-shadow: 0 0 22px rgba(72,187,120,0.18);
+  transform: translateY(-1px);
+}
+.pill-dot { width: 6px; height: 6px; border-radius: 9999px; background: #48BB78; box-shadow: 0 0 8px rgba(72,187,120,0.8); }
+
+/* Scroll reveal */
+.reveal { opacity: 0; transform: translateY(26px); transition: opacity 0.7s cubic-bezier(.2,.9,.3,1), transform 0.7s cubic-bezier(.2,.9,.3,1); }
+.reveal.in { opacity: 1; transform: none; }
+
+/* Premium image frame */
+.img-frame { position: relative; overflow: hidden; border-radius: 1rem; border: 1px solid rgba(255,255,255,0.08); box-shadow: 0 30px 70px -30px rgba(0,0,0,0.7); }
+.img-frame::after { content: ""; position: absolute; inset: 0; background: linear-gradient(180deg, transparent 40%, rgba(11,16,22,0.85) 100%); pointer-events: none; }
+.img-frame img { transition: transform 0.7s cubic-bezier(.2,.9,.3,1); }
+.img-frame:hover img { transform: scale(1.06); }
