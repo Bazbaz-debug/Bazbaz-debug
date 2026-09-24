@@ -860,14 +860,92 @@ frontend:
           Answer suggestions endpoint working correctly. Returns empty list with helpful 
           message when no weak replies found, and properly requires authentication.
 
+  - task: "Login connection-error fix (stale webpack cache baked dead code-hub-309 URL)"
+    implemented: true
+    working: true
+    file: "frontend build cache; frontend/src/pages/Login.jsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: |
+          BUG: User saw "We couldn't sign you in. Check your connection and try again."
+          on the login page (a network/no-response error, not a 401). ROOT CAUSE: the
+          served frontend bundle still contained a HARDCODED-via-old-env dead domain
+          (code-hub-309.preview.emergentagent.com) left in node_modules/.cache from a
+          previous session; a browser loading that stale chunk sent API calls to the dead
+          domain → connection failure. api.js itself is clean (uses process.env
+          REACT_APP_BACKEND_URL only). FIX: purged node_modules/.cache and restarted
+          frontend so the bundle rebuilds with ONLY the current preview URL. Verified the
+          served bundle no longer contains code-hub-309 (count 0) and now contains the
+          correct 0d11798e... URL. A fresh-browser admin login already returned 200 and
+          routed to /admin. Please verify login end-to-end via UI.
+          Creds: admin baazisufi23@gmail.com / Bigbaaz23 ; client demo@client.com / Demo@12345.
+      - working: true
+        agent: "testing"
+        comment: |
+          ✅ BUG FIX VERIFIED - ALL 3 LOGIN TESTS PASSED (3/3)
+          
+          Tested the login flow end-to-end after the stale webpack cache fix. The main agent 
+          purged node_modules/.cache and restarted the frontend to rebuild the bundle with the 
+          correct preview URL (0d11798e-...preview.emergentagent.com).
+          
+          TEST 1 — ADMIN LOGIN (CORRECT CREDENTIALS) ✅
+          • Email: baazisufi23@gmail.com / Password: Bigbaaz23
+          • Result: Successfully navigated to /admin
+          • Admin sidebar rendered correctly
+          • POST /api/auth/login → 200 (success)
+          • Request URL: https://0d11798e-a4ba-4b6e-beea-81b188d098ee.preview.emergentagent.com/api/auth/login
+          • ✅ Request hits CORRECT domain (0d11798e-...)
+          • ✅ NO connection error
+          • ✅ NO failed requests
+          
+          TEST 2 — CLIENT LOGIN (CORRECT CREDENTIALS) ✅
+          • Email: demo@client.com / Password: Demo@12345
+          • Result: Successfully navigated to /dashboard
+          • Client dashboard rendered correctly
+          • POST /api/auth/login → 200 (success)
+          • Request URL: https://0d11798e-a4ba-4b6e-beea-81b188d098ee.preview.emergentagent.com/api/auth/login
+          • ✅ Request hits CORRECT domain (0d11798e-...)
+          • ✅ NO connection error
+          • ✅ NO failed requests
+          
+          TEST 3 — WRONG PASSWORD (VERIFY ERROR MESSAGE) ✅
+          • Email: baazisufi23@gmail.com / Password: wrongpass123
+          • Result: Stayed on /login page (correct behavior)
+          • Error message displayed: "Invalid credentials"
+          • ✅ CORRECT error message (NOT "Check your connection and try again")
+          • POST /api/auth/login → 401 (Unauthorized)
+          • Request URL: https://0d11798e-a4ba-4b6e-beea-81b188d098ee.preview.emergentagent.com/api/auth/login
+          • ✅ Correct status code (401 for wrong password, NOT network error)
+          
+          NETWORK ANALYSIS:
+          • ✅ NO requests to old dead domain (code-hub-309)
+          • ✅ ALL requests hit the CORRECT domain (0d11798e-...preview.emergentagent.com)
+          • ✅ Only 1 console error: 401 from wrong password test (expected behavior)
+          
+          CRITICAL VERIFICATION:
+          • The stale webpack cache issue has been RESOLVED
+          • Frontend bundle now contains ONLY the correct preview URL
+          • NO hardcoded references to the old code-hub-309 domain
+          • Login flow works correctly for both admin and client roles
+          • Error messages are correct (wrong password shows "Invalid credentials", NOT connection error)
+          
+          The bug fix is working correctly. All login flows are fully functional with NO 
+          connection errors. The user-reported issue "We couldn't sign you in. Check your 
+          connection and try again." is RESOLVED.
+
 metadata:
   created_by: "main_agent"
-  version: "1.9"
-  test_sequence: 9
+  version: "2.0"
+  test_sequence: 10
   run_ui: false
 
 test_plan:
-  current_focus: []
+  current_focus:
+    - "Login connection-error fix (stale webpack cache baked dead code-hub-309 URL)"
   stuck_tasks: []
   test_all: false
   test_priority: "high_first"
@@ -1217,3 +1295,40 @@ agent_communication:
       
       All 10 numbered items from review request PASSED. The chatbot widget redesign is 
       production-ready. Backend task "Embed loader.js proactive nudge" updated to working: true.
+
+  - agent: "testing"
+    message: |
+      ✅ LOGIN CONNECTION-ERROR BUG FIX VERIFIED - ALL 3 TESTS PASSED
+      
+      Tested the login flow end-to-end after the stale webpack cache fix (purged 
+      node_modules/.cache and restarted frontend). The user-reported issue "We couldn't 
+      sign you in. Check your connection and try again." is RESOLVED.
+      
+      TEST RESULTS:
+      
+      ✅ TEST 1: Admin login (baazisufi23@gmail.com / Bigbaaz23)
+      • Successfully navigated to /admin with admin sidebar rendered
+      • POST /api/auth/login → 200 (success)
+      • Request hits CORRECT domain (0d11798e-...preview.emergentagent.com)
+      • NO connection error, NO failed requests
+      
+      ✅ TEST 2: Client login (demo@client.com / Demo@12345)
+      • Successfully navigated to /dashboard with client dashboard rendered
+      • POST /api/auth/login → 200 (success)
+      • Request hits CORRECT domain (0d11798e-...preview.emergentagent.com)
+      • NO connection error, NO failed requests
+      
+      ✅ TEST 3: Wrong password (baazisufi23@gmail.com / wrongpass123)
+      • Stayed on /login page (correct behavior)
+      • Error message: "Invalid credentials" (CORRECT - NOT "Check your connection")
+      • POST /api/auth/login → 401 (Unauthorized)
+      • Request hits CORRECT domain
+      
+      NETWORK ANALYSIS:
+      • ✅ NO requests to old dead domain (code-hub-309)
+      • ✅ ALL requests hit the CORRECT domain (0d11798e-...preview.emergentagent.com)
+      • ✅ Only 1 console error: 401 from wrong password test (expected behavior)
+      
+      The stale webpack cache issue has been RESOLVED. Frontend bundle now contains ONLY 
+      the correct preview URL. Login flow works correctly for both admin and client roles 
+      with proper error messages.
