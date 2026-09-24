@@ -521,6 +521,7 @@ class ChatReq(BaseModel):
     session_id: str
     message: str
     user_id: Optional[str] = None  # tenant id for sandbox
+    voice: Optional[bool] = False  # true when this turn is part of a live voice call
 
 class BookingReq(BaseModel):
     slot: str
@@ -1166,6 +1167,21 @@ async def chat_stream(req: ChatReq):
                 "reference these details, and never re-ask for anything already given) ===\n"
                 + "\n".join(convo_lines)
             )
+
+    # VOICE CALL MODE: shape the WORDS so they sound like a warm human on the phone
+    # (this turn's reply will be spoken aloud via TTS, so no markdown/emoji/URLs).
+    if getattr(req, "voice", False):
+        system += (
+            "\n\n=== YOU ARE ON A LIVE VOICE CALL (speak like a real, warm human on the phone) ==="
+            "\n- This reply will be SPOKEN ALOUD. Sound like a friendly, relaxed person talking — never like text being read."
+            "\n- Keep it SHORT: usually one or two spoken sentences. Share one idea at a time, then pause for them."
+            "\n- Open with a quick natural acknowledgement when it fits ('Mm, gotcha', 'Oh nice!', 'For sure', 'Totally', 'Good question — let me think'). Warm and unhurried."
+            "\n- Use everyday spoken phrasing and contractions. A little personality and light filler is welcome, but stay clear and easy to follow."
+            "\n- NEVER use markdown, bullet points, numbered lists, emoji, code, or symbols — they get read out loud and sound robotic."
+            "\n- NEVER read out URLs, web addresses, or email addresses. If something lives online, describe it in words and offer to text or email the link instead."
+            "\n- Say things the way you'd speak them: 'twenty dollars' not '$20', 'around 3 pm' not '15:00'. Spell numbers and prices out naturally."
+            "\n- Ask ONE question at a time, then stop talking so the caller can answer."
+        )
 
     chat = LlmChat(api_key=EMERGENT_LLM_KEY, session_id=req.session_id, system_message=system).with_model("anthropic", "claude-sonnet-4-6")
 

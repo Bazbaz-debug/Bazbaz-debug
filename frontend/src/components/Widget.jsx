@@ -216,7 +216,7 @@ export default function Widget({ tenant, colors, catalog, embedded = false, onCl
     try {
       const res = await fetch(`${API}/chat/stream`, {
         method: "POST", headers: {"Content-Type":"application/json"},
-        body: JSON.stringify({ session_id: sessionId, message: text, user_id: tenant?.id }),
+        body: JSON.stringify({ session_id: sessionId, message: text, user_id: tenant?.id, voice: !!callActiveRef.current }),
       });
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
