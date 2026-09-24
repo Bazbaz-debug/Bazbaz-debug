@@ -268,7 +268,7 @@ backend:
           ✅ ALL TESTS PASSED (4/4) - Chatbot widget redesign fully functional
           
           Tested the redesigned chatbot widget and full-screen Live Preview per review request.
-          Base URL: https://9637df82-16ce-40a3-8b4b-1ea16e526f30.preview.emergentagent.com
+          Base URL: https://code-hub-309.preview.emergentagent.com
           Login: demo@client.com / Demo@12345
           
           TEST A — FULL-SCREEN LIVE PREVIEW ✅
@@ -1185,7 +1185,7 @@ agent_communication:
       ✅ CHATBOT WIDGET REDESIGN TESTING COMPLETE - ALL TESTS PASSED (10/10)
       
       Tested the redesigned chatbot widget and full-screen Live Preview per review request.
-      Base URL: https://9637df82-16ce-40a3-8b4b-1ea16e526f30.preview.emergentagent.com
+      Base URL: https://code-hub-309.preview.emergentagent.com
       Login: demo@client.com / Demo@12345
       
       TEST RESULTS SUMMARY:

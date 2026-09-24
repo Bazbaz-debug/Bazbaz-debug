@@ -8,7 +8,7 @@ import time
 import sys
 
 # Use the public backend URL from frontend/.env
-BASE_URL = "https://9637df82-16ce-40a3-8b4b-1ea16e526f30.preview.emergentagent.com/api"
+BASE_URL = "https://code-hub-309.preview.emergentagent.com/api"
 
 # Test credentials from /app/memory/test_credentials.md
 ADMIN_EMAIL = "baazisufi23@gmail.com"

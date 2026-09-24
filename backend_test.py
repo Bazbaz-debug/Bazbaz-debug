@@ -11,7 +11,7 @@ import time
 from typing import Dict, List
 
 # Backend URL from frontend/.env
-BACKEND_URL = "https://9637df82-16ce-40a3-8b4b-1ea16e526f30.preview.emergentagent.com"
+BACKEND_URL = "https://code-hub-309.preview.emergentagent.com"
 CHAT_STREAM_URL = f"{BACKEND_URL}/api/chat/stream"
 
 # Test user_id (consistent across all tests)
