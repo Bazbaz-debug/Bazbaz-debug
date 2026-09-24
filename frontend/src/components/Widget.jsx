@@ -70,6 +70,10 @@ export default function Widget({ tenant, colors, catalog, embedded = false, onCl
   const [replyLang, setReplyLang] = useState("en");
   const [callActive, setCallActive] = useState(false);
   const [callListening, setCallListening] = useState(false);
+  const [callSeconds, setCallSeconds] = useState(0);
+  const [callCaption, setCallCaption] = useState("");
+  const [callUserText, setCallUserText] = useState("");
+  const [muted, setMuted] = useState(false);
   const scrollRef = useRef(null);
   const audioRef = useRef(null);
   const videoElRef = useRef(null);
@@ -78,9 +82,19 @@ export default function Widget({ tenant, colors, catalog, embedded = false, onCl
   const recognitionRef = useRef(null);
   const sessionId = useRef(`sess-${Date.now()}`).current;
   const callActiveRef = useRef(false);
+  const ttsBusyRef = useRef(false);
+  const mutedRef = useRef(false);
   const audioCtxRef = useRef(null);
   const analyserRef = useRef(null);
   const rafRef = useRef(null);
+
+  // Live-call elapsed timer (mm:ss) — runs only while a call is active
+  useEffect(() => {
+    if (!callActive) { setCallSeconds(0); setCallCaption(""); setCallUserText(""); setMuted(false); mutedRef.current = false; return; }
+    const iv = setInterval(() => setCallSeconds(s => s + 1), 1000);
+    return () => clearInterval(iv);
+  }, [callActive]);
+  const fmtDur = (s) => `${String(Math.floor(s/60)).padStart(2,"0")}:${String(s%60).padStart(2,"0")}`;
 
   const stopMouthAnalyser = useCallback(() => {
     if (rafRef.current) { cancelAnimationFrame(rafRef.current); rafRef.current = null; }
@@ -149,7 +163,7 @@ export default function Widget({ tenant, colors, catalog, embedded = false, onCl
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
   }, [messages, busy]);
 
-  const playTTS = useCallback(async (text, langHint) => {
+  const playTTS = useCallback(async (text, langHint, fast = false) => {
     if (!voiceMode || !text) return;
     // CRITICAL: kill any previously-playing audio to prevent double voices
     try { if (audioRef.current) { audioRef.current.pause(); audioRef.current.currentTime = 0; audioRef.current = null; } } catch {}
@@ -161,13 +175,14 @@ export default function Widget({ tenant, colors, catalog, embedded = false, onCl
     try {
       const r = await fetch(`${API}/voice/tts`, {
         method: "POST", headers: {"Content-Type":"application/json"},
-        body: JSON.stringify({ text: text.slice(0, 1200), voice: voiceName, tenant_id: tenant?.id }),
+        body: JSON.stringify({ text: text.slice(0, 1200), voice: voiceName, tenant_id: tenant?.id, fast: !!fast }),
       });
       const data = await r.json();
       if (data.audio_base64) {
         const audio = new Audio(`data:${data.mime};base64,${data.audio_base64}`);
         audioRef.current = audio;
         setSpeaking(true);
+        if (callActiveRef.current) setCallCaption(text);
         return new Promise((resolve) => {
           audio.onended = () => { setSpeaking(false); audioRef.current = null; stopMouthAnalyser(); resolve(); };
           audio.onerror = () => { setSpeaking(false); audioRef.current = null; stopMouthAnalyser(); resolve(); };
@@ -213,10 +228,56 @@ export default function Widget({ tenant, colors, catalog, embedded = false, onCl
     setInput("");
     setBusy(true);
     let acc = "";
+    const isCall = !!callActiveRef.current;
+    const EMOJI = /[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{2190}-\u{21FF}\u{2B00}-\u{2BFF}\u{FE0F}\u{200D}]/gu;
+    const stripSpoken = (s) => s.replace(EMOJI, "").replace(/\s{2,}/g, " ").trim();
+    // --- Streaming sentence-by-sentence TTS (calls only) → the bot starts talking
+    // as soon as the FIRST sentence is ready, instead of waiting for the whole reply. ---
+    const ttsQueue = [];
+    let spokenPtr = 0;
+    let streamEnded = false;
+    let draining = false;
+    let drainDone;
+    const drainDonePromise = new Promise(res => { drainDone = res; });
+    const drain = async () => {
+      if (draining) return;
+      draining = true;
+      ttsBusyRef.current = true;
+      while (true) {
+        if (ttsQueue.length === 0) {
+          if (streamEnded) break;
+          await new Promise(r => setTimeout(r, 50));
+          continue;
+        }
+        const s = ttsQueue.shift();
+        await playTTS(s, null, true); // fast tts-1 for low latency
+      }
+      draining = false;
+      ttsBusyRef.current = false;
+      drainDone();
+    };
+    const enqueueSpoken = (final) => {
+      const { clean } = extractActions(acc);
+      const spoken = stripSpoken(clean);
+      const pending = spoken.slice(spokenPtr);
+      if (final) {
+        const tail = pending.trim();
+        if (tail) { ttsQueue.push(tail); spokenPtr = spoken.length; }
+      } else {
+        // grab everything up to the LAST completed sentence boundary
+        const match = pending.match(/^[\s\S]*[.!?。！？…](?=\s|$)/);
+        if (!match) return;
+        const chunk = match[0];
+        if (chunk.trim().length < 2) return;
+        ttsQueue.push(chunk.trim());
+        spokenPtr += chunk.length;
+      }
+      drain();
+    };
     try {
       const res = await fetch(`${API}/chat/stream`, {
         method: "POST", headers: {"Content-Type":"application/json"},
-        body: JSON.stringify({ session_id: sessionId, message: text, user_id: tenant?.id, voice: !!callActiveRef.current }),
+        body: JSON.stringify({ session_id: sessionId, message: text, user_id: tenant?.id, voice: isCall }),
       });
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
@@ -238,6 +299,8 @@ export default function Widget({ tenant, colors, catalog, embedded = false, onCl
                 const { clean: partial } = extractActions(acc);
                 if (partial) setMessages(m => { const c=[...m]; c[c.length-1]={role:"assistant",text:partial}; return c; });
               }
+              // In a call, speak each finished sentence immediately (overlaps with generation).
+              if (isCall && voiceMode) enqueueSpoken(false);
             }
           } catch {}
         }
@@ -246,10 +309,15 @@ export default function Widget({ tenant, colors, catalog, embedded = false, onCl
       const { clean, actions, lang, buys } = extractActions(acc);
       if (lang) setReplyLang(lang);
       setMessages(m => { const c=[...m]; c[c.length-1]={role:"assistant",text:clean, buys}; return c; });
-      // Play TTS with clean text (strip emoji so they aren't read aloud; pass lang for voice)
-      const spoken = clean.replace(/[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{2190}-\u{21FF}\u{2B00}-\u{2BFF}\u{FE0F}\u{200D}]/gu, "").replace(/\s{2,}/g, " ").trim();
+      const spoken = stripSpoken(clean);
       if (spoken && voiceMode) {
-        if (lipsyncMode && tenant?.id) {
+        if (isCall) {
+          // flush any trailing partial sentence, then wait until everything has been spoken
+          streamEnded = true;
+          enqueueSpoken(true);
+          drain();
+          await drainDonePromise;
+        } else if (lipsyncMode && tenant?.id) {
           setGeneratingVideo(true);
           try {
             const rr = await fetch(`${API}/avatar/lipsync`, {
@@ -272,6 +340,8 @@ export default function Widget({ tenant, colors, catalog, embedded = false, onCl
         } else {
           await playTTS(spoken, lang);
         }
+      } else {
+        streamEnded = true;
       }
       // Execute actions AFTER speaking
       for (const a of actions) {
@@ -436,6 +506,7 @@ export default function Widget({ tenant, colors, catalog, embedded = false, onCl
   };
   const listenLoop = () => {
     if (!callActiveRef.current) return;
+    if (mutedRef.current) { setCallListening(false); setTimeout(listenLoop, 400); return; }
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
     const recog = new SR();
     recog.continuous = false;
@@ -446,16 +517,18 @@ export default function Widget({ tenant, colors, catalog, embedded = false, onCl
       const t = e.results?.[0]?.[0]?.transcript?.trim();
       setCallListening(false);
       if (t) {
+        setCallUserText(t);
         await sendText(t);
       }
-      // After bot finishes speaking, TTS.onended triggers setSpeaking(false); we then loop again
+      // Wait until the bot has fully finished speaking (queue drained) before listening again.
       const waitStart = Date.now();
       const wait = () => new Promise(r => {
         const iv = setInterval(() => {
           if (!callActiveRef.current) { clearInterval(iv); r(); return; }
-          if (!audioRef.current || audioRef.current.paused || audioRef.current.ended) { clearInterval(iv); r(); }
+          const audioIdle = !audioRef.current || audioRef.current.paused || audioRef.current.ended;
+          if (!ttsBusyRef.current && audioIdle) { clearInterval(iv); r(); }
           if (Date.now() - waitStart > 30000) { clearInterval(iv); r(); }
-        }, 300);
+        }, 200);
       });
       await wait();
       if (callActiveRef.current) listenLoop();
@@ -465,8 +538,15 @@ export default function Widget({ tenant, colors, catalog, embedded = false, onCl
     recognitionRef.current = recog;
     try { recog.start(); } catch {}
   };
+  const toggleMute = () => {
+    const next = !mutedRef.current;
+    mutedRef.current = next; setMuted(next);
+    if (next) { try { recognitionRef.current?.stop(); } catch {} setCallListening(false); }
+    else if (callActiveRef.current) { listenLoop(); }
+  };
   const endCall = () => {
     callActiveRef.current = false;
+    ttsBusyRef.current = false;
     setCallActive(false); setCallListening(false);
     try { recognitionRef.current?.stop(); } catch {}
     if (audioRef.current) { try { audioRef.current.pause(); } catch {} }
@@ -506,21 +586,80 @@ export default function Widget({ tenant, colors, catalog, embedded = false, onCl
 
   return (
     <div data-testid="sandbox-widget" className={containerClass} style={containerStyle}>
-      {/* VOICE-ONLY OVERLAY — sits INSIDE the widget box (absolute, not fixed) */}
+      {/* VOICE-ONLY OVERLAY — realistic live-call screen, sits INSIDE the widget box */}
       {callActive && (
-        <div data-testid="voice-only-overlay" className="absolute inset-0 z-[80] flex flex-col items-center justify-center p-6" style={{ background: "rgba(6, 10, 14, 0.92)", backdropFilter: "blur(24px) saturate(140%)", WebkitBackdropFilter: "blur(24px) saturate(140%)" }}>
-          {/* soft accent halo behind face */}
-          <div className="absolute pointer-events-none" style={{ width: "28rem", height: "28rem", borderRadius: "9999px", background: `radial-gradient(circle, ${accent}22 0%, transparent 65%)`, filter: "blur(40px)" }}></div>
-          <div className={`relative w-44 h-44 rounded-full overflow-hidden mb-6 voice-halo ${callListening || speaking ? "face-speaking" : "face-alive"}`} style={{ border: `3px solid ${accent}`, boxShadow: `0 0 60px ${accent}55, 0 0 120px ${accent}22` }}>
-            <img src={avatarUrl(gender)} alt="AI" className="w-full h-full object-cover" data-face data-base-scale="1.15" style={{ objectPosition: "center 22%", transform: "scale(1.15)", transition: "transform 60ms linear, filter 60ms linear" }}/>
+        <div data-testid="voice-only-overlay" className="absolute inset-0 z-[80] flex flex-col" style={{ background: "radial-gradient(120% 120% at 50% 0%, rgba(13,20,28,0.96) 0%, rgba(6,10,14,0.98) 60%)", backdropFilter: "blur(26px) saturate(150%)", WebkitBackdropFilter: "blur(26px) saturate(150%)" }}>
+          {/* Top bar: identity + live timer */}
+          <div className="relative flex items-center justify-between px-5 pt-5">
+            <div className="flex items-center gap-2 min-w-0">
+              <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: "#F56565", boxShadow: "0 0 8px #F56565" }}></span>
+              <span className="text-white/80 text-xs font-semibold truncate">{tenant?.bot_name || tenant?.full_name || "AI Concierge"}</span>
+            </div>
+            <span className="text-white/50 text-xs font-mono tabular-nums" data-testid="call-timer">{fmtDur(callSeconds)}</span>
           </div>
-          <p className="uppercase tracking-[0.4em] text-xs font-bold mb-2 relative" style={{ color: accent }}>
-            {callListening ? "LISTENING" : speaking ? "SPEAKING" : "IN CALL"}
-          </p>
-          <p className="text-white/60 text-xs mb-6 text-center max-w-xs relative">Just talk &mdash; I&rsquo;m listening in any language.</p>
-          <button data-testid="widget-endcall-fullscreen" onClick={endCall} className="w-14 h-14 rounded-full flex items-center justify-center shadow-2xl hover:scale-105 transition-transform relative" style={{ background: "#F56565", color: "#fff" }}>
-            <PhoneOff size={22}/>
-          </button>
+
+          {/* Center: avatar with speaking rings / breathing */}
+          <div className="relative flex-1 flex flex-col items-center justify-center px-6">
+            <div className="absolute pointer-events-none" style={{ width: "26rem", height: "26rem", borderRadius: "9999px", background: `radial-gradient(circle, ${accent}26 0%, transparent 62%)`, filter: "blur(38px)" }}></div>
+            <div className="relative mb-7" style={{ color: accent }}>
+              {/* radiating rings while speaking */}
+              {speaking && (
+                <>
+                  <span className="call-ring"></span>
+                  <span className="call-ring d2"></span>
+                  <span className="call-ring d3"></span>
+                </>
+              )}
+              <div className={`relative w-40 h-40 rounded-full overflow-hidden voice-halo ${speaking ? "face-speaking" : "face-alive"}`} style={{ border: `3px solid ${accent}`, boxShadow: `0 0 55px ${accent}55, 0 0 110px ${accent}22` }}>
+                <img src={avatarUrl(gender)} alt="AI" className="w-full h-full object-cover" data-face data-base-scale="1.15" style={{ objectPosition: "center 22%", transform: "scale(1.15)", transition: "transform 60ms linear, filter 60ms linear" }}/>
+              </div>
+            </div>
+
+            {/* status pill */}
+            <div className="relative flex items-center gap-2 px-3 py-1.5 rounded-full mb-4" style={{ background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.1)" }}>
+              {speaking ? (
+                <>
+                  <Volume2 size={13} style={{ color: accent }}/>
+                  <span className="text-xs font-semibold" style={{ color: accent }}>Speaking</span>
+                </>
+              ) : callListening ? (
+                <>
+                  <span className="flex items-end gap-0.5 h-3.5" style={{ color: accent }}>
+                    {[0,1,2,3,4].map(i => (
+                      <span key={i} className="eq-bar" style={{ height: "100%", background: accent, animationDelay: `${i*0.12}s` }}></span>
+                    ))}
+                  </span>
+                  <span className="text-xs font-semibold" style={{ color: accent }}>Listening</span>
+                </>
+              ) : muted ? (
+                <span className="text-xs font-semibold text-white/50">Muted</span>
+              ) : (
+                <span className="text-xs font-semibold text-white/50">Connecting…</span>
+              )}
+            </div>
+
+            {/* live captions */}
+            <div className="relative w-full max-w-xs text-center min-h-[3.5rem]">
+              {callCaption ? (
+                <p key={callCaption} className="caption-fade text-white text-sm leading-snug" data-testid="call-caption">{callCaption}</p>
+              ) : (
+                <p className="text-white/45 text-xs">Just talk — I&rsquo;m listening in any language.</p>
+              )}
+              {callUserText && (
+                <p className="mt-2 text-white/40 text-[11px] italic truncate">You: “{callUserText}”</p>
+              )}
+            </div>
+          </div>
+
+          {/* Bottom controls: mute + end */}
+          <div className="relative flex items-center justify-center gap-6 pb-8 pt-2">
+            <button data-testid="widget-mute-btn" onClick={toggleMute} title={muted ? "Unmute" : "Mute"} className="w-12 h-12 rounded-full flex items-center justify-center transition-transform hover:scale-105" style={{ background: muted ? "rgba(245,101,101,0.18)" : "rgba(255,255,255,0.08)", color: muted ? "#F56565" : "#fff", border: `1px solid ${muted ? "#F5656577" : "rgba(255,255,255,0.14)"}` }}>
+              {muted ? <MicOff size={19}/> : <Mic size={19}/>}
+            </button>
+            <button data-testid="widget-endcall-fullscreen" onClick={endCall} title="End call" className="w-16 h-16 rounded-full flex items-center justify-center shadow-2xl hover:scale-105 transition-transform" style={{ background: "#F56565", color: "#fff", boxShadow: "0 8px 28px rgba(245,101,101,0.5)" }}>
+              <PhoneOff size={24}/>
+            </button>
+          </div>
         </div>
       )}
       {/* Chat mode: premium header with hero gradient */}

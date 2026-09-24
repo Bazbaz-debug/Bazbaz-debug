@@ -2104,12 +2104,14 @@ class TTSReq(BaseModel):
     text: str
     voice: str = "nova"
     tenant_id: Optional[str] = None
+    fast: Optional[bool] = False  # use tts-1 (lower latency) for live calls; tts-1-hd otherwise
 
 @api_router.post("/voice/tts")
 async def voice_tts(req: TTSReq):
     tts = OpenAITextToSpeech(api_key=EMERGENT_LLM_KEY)
     try:
-        b64 = await tts.generate_speech_base64(text=req.text[:2000], voice=req.voice, model="tts-1-hd", response_format="mp3")
+        tts_model = "tts-1" if req.fast else "tts-1-hd"
+        b64 = await tts.generate_speech_base64(text=req.text[:2000], voice=req.voice, model=tts_model, response_format="mp3")
         if req.tenant_id:
             # ~ 150 words/min TTS; approximate seconds from char count
             secs = max(1, int(len(req.text) / 15))

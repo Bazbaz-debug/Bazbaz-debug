@@ -98,6 +98,39 @@ html, body, #root {
 }
 .pulse-dot { animation: pulse-ring 1.6s cubic-bezier(0.4,0,0.6,1) infinite; }
 
+/* ===== Realistic live-call UI ===== */
+/* Concentric rings that radiate while the AI is speaking */
+@keyframes call-ring-expand {
+  0%   { transform: scale(0.85); opacity: 0.55; }
+  100% { transform: scale(1.9);  opacity: 0; }
+}
+.call-ring {
+  position: absolute; inset: 0; border-radius: 9999px;
+  border: 2px solid currentColor;
+  animation: call-ring-expand 2.4s ease-out infinite;
+  will-change: transform, opacity;
+}
+.call-ring.d2 { animation-delay: 0.8s; }
+.call-ring.d3 { animation-delay: 1.6s; }
+
+/* Equalizer bars shown while the AI is listening to the caller */
+@keyframes eq-bounce {
+  0%, 100% { transform: scaleY(0.28); }
+  50%      { transform: scaleY(1); }
+}
+.eq-bar {
+  width: 4px; border-radius: 4px; transform-origin: center bottom;
+  animation: eq-bounce 0.9s ease-in-out infinite;
+}
+
+/* Caption text fade-in */
+@keyframes caption-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.caption-fade { animation: caption-in 0.35s ease-out; }
+
+
 /* Typing indicator dots */
 @keyframes typing-bounce {
   0%, 60%, 100% { transform: translateY(0); opacity: 0.5; }
