@@ -4,7 +4,7 @@ import { KairoMark } from "@/components/KairoLogo";
 import { toast } from "sonner";
 import api from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
-import { Shield, UserPlus, KeyRound, PowerOff, Power, Files, LogOut, Edit3, Save, Bot, Activity, MessagesSquare, CalendarCheck, Mic, PhoneCall, Users, Video, FileText, TrendingUp, CheckCircle2, XCircle, Settings, BarChart3, Upload, Sliders, Globe, Mail, Video as VideoIcon, Phone, Eye, ScrollText, Search, Sparkles, Trash2, Clock, Inbox, ClipboardList, ChevronDown, LayoutDashboard, ArrowRight } from "lucide-react";
+import { Shield, UserPlus, KeyRound, PowerOff, Power, Files, LogOut, Edit3, Save, Bot, Activity, MessagesSquare, CalendarCheck, Mic, PhoneCall, Users, Video, FileText, TrendingUp, CheckCircle2, XCircle, Settings, BarChart3, Upload, Sliders, Globe, Mail, Video as VideoIcon, Phone, Eye, ScrollText, Search, Sparkles, Trash2, Clock, Inbox, ClipboardList, ChevronDown, LayoutDashboard, ArrowRight, Cloud } from "lucide-react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";

@@ -1014,6 +1014,23 @@ async def crawl_url(payload: dict, user=Depends(get_current_user)):
     return {"ok": True, "products": items, "delivery": delivery, "title": title, "description": meta_desc, "kind": parsed.get("kind", "offering")}
 
 # ============= CHAT (SSE STREAM) =============
+_LLM_DEFAULT_MODEL = {"openai": "gpt-5.4-mini", "anthropic": "claude-sonnet-4-6", "gemini": "gemini-3.8-flash"}
+
+async def get_llm_config():
+    """Resolve the chat AI provider/model/key from admin Platform Keys.
+    Falls back to fast OpenAI gpt-5.4-mini on the Emergent key when nothing is set."""
+    s = await db.settings.find_one({"id": "app_settings"}, {"_id": 0}) or {}
+    provider = (s.get("llm_provider") or "openai").strip().lower()
+    if provider not in _LLM_DEFAULT_MODEL:
+        provider = "openai"
+    model = (s.get("llm_model") or "").strip() or _LLM_DEFAULT_MODEL[provider]
+    try:
+        own_key = platform_key_value(s, "llm_api_key")
+    except Exception:
+        own_key = ""
+    key = own_key or EMERGENT_LLM_KEY
+    return {"provider": provider, "model": model, "key": key}
+
 @api_router.post("/chat/stream")
 async def chat_stream(req: ChatReq):
     tenant_id = req.user_id
@@ -1183,7 +1200,8 @@ async def chat_stream(req: ChatReq):
             "\n- Ask ONE question at a time, then stop talking so the caller can answer."
         )
 
-    chat = LlmChat(api_key=EMERGENT_LLM_KEY, session_id=req.session_id, system_message=system).with_model("anthropic", "claude-sonnet-4-6")
+    llm_cfg = await get_llm_config()
+    chat = LlmChat(api_key=llm_cfg["key"], session_id=req.session_id, system_message=system).with_model(llm_cfg["provider"], llm_cfg["model"])
 
     # increment chats counter
     if tenant_id:
@@ -2298,9 +2316,23 @@ PLATFORM_KEY_SPECS = [
          {"key": "twilio_account_sid", "label": "Twilio Account SID", "secret": False, "placeholder": "AC..."},
          {"key": "twilio_auth_token", "label": "Twilio Auth Token", "secret": True, "placeholder": "optional"},
      ]},
-    {"category": "chat", "label": "Chat / LLM", "icon": "sparkles",
+    {"category": "chat", "label": "Chat / AI Brain", "icon": "sparkles",
      "fields": [
-         {"key": "llm_api_key", "label": "LLM API Key (falls back to platform key)", "secret": True, "placeholder": "sk-..."},
+         {"key": "llm_provider", "label": "AI Provider", "secret": False, "placeholder": "openai",
+          "options": ["openai", "anthropic", "gemini"]},
+         {"key": "llm_model", "label": "Model", "secret": False, "placeholder": "gpt-5.4-mini",
+          "options_by_provider": {
+              "openai": ["gpt-5.4-mini", "gpt-5.4", "gpt-5.5", "gpt-5-mini", "gpt-4.1-mini"],
+              "anthropic": ["claude-sonnet-4-6", "claude-haiku-4-5-20251001", "claude-opus-4-7"],
+              "gemini": ["gemini-3.8-flash", "gemini-3.1-pro-preview", "gemini-2.5-flash"],
+          }},
+         {"key": "llm_api_key", "label": "Your API Key (optional — falls back to Emergent key)", "secret": True, "placeholder": "sk-... / your provider key"},
+     ]},
+    {"category": "aws", "label": "Amazon Web Services (AWS)", "icon": "cloud",
+     "fields": [
+         {"key": "aws_access_key_id", "label": "AWS Access Key ID", "secret": True, "placeholder": "AKIA..."},
+         {"key": "aws_secret_access_key", "label": "AWS Secret Access Key", "secret": True, "placeholder": "wJalr..."},
+         {"key": "aws_region", "label": "AWS Region", "secret": False, "placeholder": "us-east-1"},
      ]},
 ]
 _FIELD_INDEX = {f["key"]: f for cat in PLATFORM_KEY_SPECS for f in cat["fields"]}
@@ -2330,13 +2362,18 @@ async def get_platform_keys(admin=Depends(require_admin)):
         fields_out = []
         for f in cat["fields"]:
             plain = platform_key_value(s, f["key"])
-            fields_out.append({
+            field_out = {
                 "key": f["key"], "label": f["label"], "secret": f.get("secret", False),
                 "placeholder": f.get("placeholder", ""),
                 "configured": bool(plain),
                 # secrets are masked; plain values are returned as-is for editing
                 "value": mask_secret(plain) if f.get("secret") else plain,
-            })
+            }
+            if f.get("options"):
+                field_out["options"] = f["options"]
+            if f.get("options_by_provider"):
+                field_out["options_by_provider"] = f["options_by_provider"]
+            fields_out.append(field_out)
         categories.append({"category": cat["category"], "label": cat["label"], "icon": cat["icon"], "fields": fields_out})
     # Back-compat top-level flags
     resend_plain = platform_key_value(s, "resend_api_key")
